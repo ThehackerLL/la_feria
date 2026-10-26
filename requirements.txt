@@ -1,0 +1,6 @@
+customtkinter
+openpyxl
+python-escpos
+pywin32; sys_platform == "win32"
+pyinstaller
+customtkinter==6.0.0

@@ -1,0 +1,27 @@
+# Entornos y archivos temporales de Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# DATOS DEL NEGOCIO: nunca se suben (clientes, ventas, deudas)
+datos/*.db
+datos/*.db-journal
+datos/*.db-wal
+datos/*.db-shm
+datos/*.sqlite*
+!datos/.gitkeep
+
+# Reportes de Excel y respaldos: tienen datos reales
+reportes/*
+!reportes/.gitkeep
+respaldos/*
+!respaldos/.gitkeep
+
+# Se generan al crear el .exe
+build/
+dist/
+*.spec
+
+# Editor
+.vscode/
