@@ -6,8 +6,8 @@ import customtkinter as ctk
 
 from app import config
 from app.interfaz import estilos as e
-from app.interfaz.componentes import _Dialogo, confirmar
-from app.servicios import creditos
+from app.interfaz.componentes import _Dialogo, aviso, confirmar
+from app.servicios import creditos, respaldos
 from app.utilidades.formato import moneda
 
 # (nombre en la pestaña, módulo, clase, etapa en que se construye)
@@ -21,6 +21,7 @@ PESTANAS = [
     ("Envíos", "envios", "PantallaEnvios", "Etapa 5"),
     ("Caja y reportes", "caja", "PantallaCaja", "Etapa 4"),
     ("Clientes", "clientes", "PantallaClientes", "Etapa 5"),
+    ("Configuración", "configuracion", "PantallaConfiguracion", "Etapa 6"),
 ]
 PESTANA_INICIAL = "Ventas"       # la pestaña que se ve al abrir el programa
 
@@ -73,6 +74,7 @@ class VentanaPrincipal(ctk.CTk):
                         pady=(e.ESPACIO, e.MARGEN))
         self.mostrar(PESTANA_INICIAL)
         self.protocol("WM_DELETE_WINDOW", self._cerrar)
+        self.after(200, self._respaldo_al_abrir)
         self.after(400, self._avisar_vencidas)   # cuando la ventana ya se vio
 
     # ------------------------------------------------------------- encabezado
@@ -128,6 +130,16 @@ class VentanaPrincipal(ctk.CTk):
                 return pantalla(self._zona)
         raise KeyError(nombre)
 
+    # ---------------------------------------------------------------- respaldo
+    def _respaldo_al_abrir(self):
+        """Si pasó más de un día sin respaldo (p. ej. la PC se apagó sin cerrar
+        el programa), lo hace ahora. Solo avisa si falla."""
+        try:
+            respaldos.respaldar_si_toca()
+        except (ValueError, OSError) as error:
+            aviso(self, "No se pudo respaldar",
+                  f"{error}\n\nRevisa la pestaña Configuración.")
+
     # ---------------------------------------------------------- cuotas vencidas
     def _avisar_vencidas(self):
         """Al abrir el programa: avisa si hay cuotas de crédito vencidas."""
@@ -156,4 +168,20 @@ class VentanaPrincipal(ctk.CTk):
                     "Hay una venta sin cobrar o ventas en espera. Si cierras "
                     "ahora se perderán.", texto_si="Cerrar", peligro=True):
                 return
+        self._respaldar_al_cerrar()
         self.destroy()
+
+    def _respaldar_al_cerrar(self):
+        """Respalda si hubo cambios. Nunca impide cerrar, pero avisa si algo falló."""
+        try:
+            resultado = respaldos.respaldar_al_cerrar()
+        except (ValueError, OSError) as error:
+            aviso(self, "No se pudo respaldar",
+                  f"{error}\n\nEl programa se cerrará igual. Haz un respaldo "
+                  "a mano en Configuración cuando puedas.")
+            return
+        if resultado and resultado["extra"] == "error":
+            aviso(self, "Copia extra pendiente",
+                  "El respaldo se guardó en esta PC, pero no se pudo copiar a:\n"
+                  f"{resultado['extra_carpeta']}\n\n¿Está conectado el USB o "
+                  "disponible la carpeta de Drive?")

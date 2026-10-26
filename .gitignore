@@ -12,6 +12,9 @@ datos/*.db-shm
 datos/*.sqlite*
 !datos/.gitkeep
 
+# Ajustes de cada PC (carpeta de la copia extra, etc.)
+ajustes.json
+
 # Reportes de Excel y respaldos: tienen datos reales
 reportes/*
 !reportes/.gitkeep
