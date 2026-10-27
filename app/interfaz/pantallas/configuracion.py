@@ -1,8 +1,10 @@
-"""Pantalla Configuración: por ahora, los respaldos de la información.
+"""Pantalla Configuración: respaldos y carpeta de los Excel.
 
 El programa respalda solo (al abrir si pasó un día, y al cerrar si hubo
 cambios). Aquí se puede respaldar a mano, ver los respaldos guardados,
 elegir una carpeta para una copia extra (Google Drive, USB) y restaurar.
+También se elige la carpeta (p. ej. de Google Drive) donde se copia cada Excel
+de reportes, para verlo desde el celular.
 Más adelante aquí irán también la contraseña y los datos de la tienda.
 """
 import os
@@ -44,12 +46,17 @@ class PantallaConfiguracion(ctk.CTkFrame):
         self._lista = []           # respaldos que se ven en la tabla
         self.alerta = Alerta(self)
         self.alerta.pack(fill="x")
+        # Con scroll: en ventanas bajas todas las secciones siguen alcanzables.
+        self._cuerpo = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self._cuerpo.pack(fill="both", expand=True)
         self._crear_respaldos()
+        self._crear_excel()
 
     # --------------------------------------------------------------- armado
     def _crear_respaldos(self):
-        panel = ctk.CTkFrame(self, border_width=1, border_color=e.COLOR_BORDE)
-        panel.pack(fill="both", expand=True)
+        panel = ctk.CTkFrame(self._cuerpo, border_width=1,
+                             border_color=e.COLOR_BORDE)
+        panel.pack(fill="x")
         panel.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(panel, text="Respaldos", anchor="w",
@@ -101,6 +108,35 @@ class PantallaConfiguracion(ctk.CTkFrame):
                                    pady=(10, 16))
         self._boton_restaurar.configure(state="disabled")
 
+    def _crear_excel(self):
+        panel = ctk.CTkFrame(self._cuerpo, border_width=1,
+                             border_color=e.COLOR_BORDE)
+        panel.pack(fill="x", pady=(e.ESPACIO, 0))
+        panel.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(panel, text="Excel de reportes", anchor="w",
+                     font=ctk.CTkFont(size=e.TAM_SUBTITULO, weight="bold")
+                     ).grid(row=0, column=0, columnspan=3, sticky="ew",
+                            padx=16, pady=(14, 2))
+        ctk.CTkLabel(panel, anchor="w", justify="left", wraplength=760,
+                     text_color=e.COLOR_TEXTO_SUAVE,
+                     text="Cada Excel que exportes en Reportes se guarda directo "
+                          "en la carpeta que elijas (por ejemplo una de Google "
+                          "Drive), sin dejar copia en esta PC, y así lo ves desde "
+                          "el celular. Si Drive no está disponible, se guarda en "
+                          "la PC. Ojo: el Excel «con costos» lleva la ganancia; "
+                          "elige una carpeta que solo vean personas de confianza."
+                     ).grid(row=1, column=0, columnspan=3, sticky="ew",
+                            padx=16, pady=(0, 8))
+        self._texto_excel = ctk.CTkLabel(panel, text="", anchor="w",
+                                         justify="left", wraplength=520)
+        self._texto_excel.grid(row=2, column=0, sticky="ew", padx=16,
+                               pady=(0, 16))
+        boton(panel, "Elegir carpeta…", self._elegir_excel, "secundario",
+              ancho=140).grid(row=2, column=1, padx=(8, 0), pady=(0, 16))
+        self._quitar_excel = boton(panel, "Quitar", self._quitar_excel_accion,
+                                   "secundario", ancho=80)
+        self._quitar_excel.grid(row=2, column=2, padx=(8, 16), pady=(0, 16))
+
     # ------------------------------------------------------------- mostrar
     def refrescar(self):
         """Se llama al abrir la pestaña."""
@@ -138,6 +174,23 @@ class PantallaConfiguracion(ctk.CTkFrame):
                       "No disponible ahora (¿está conectado el USB?)."),
                 text_color=e.COLOR_TEXTO if disponible else e.COLOR_AVISO)
             self._quitar_extra.configure(state="normal")
+
+        carpeta = respaldos.carpeta_excel()
+        if carpeta is None:
+            self._texto_excel.configure(
+                text="Carpeta de los Excel: ninguna (se guardan en esta PC, "
+                     "en la carpeta «reportes»).",
+                text_color=e.COLOR_TEXTO_SUAVE)
+            self._quitar_excel.configure(state="disabled")
+        else:
+            disponible = carpeta.exists()
+            self._texto_excel.configure(
+                text=f"Carpeta de los Excel: {carpeta}\n" +
+                     ("Disponible." if disponible else
+                      "No disponible ahora (¿está abierto Google Drive?). "
+                      "Mientras tanto los Excel se guardan en la PC."),
+                text_color=e.COLOR_TEXTO if disponible else e.COLOR_AVISO)
+            self._quitar_excel.configure(state="normal")
 
     # ------------------------------------------------------------- acciones
     def _respaldar_ahora(self):
@@ -178,6 +231,28 @@ class PantallaConfiguracion(ctk.CTkFrame):
         self.refrescar()
         self.alerta.mostrar("Ya no se hace copia extra. Los respaldos ya "
                             "copiados no se borran.", "ok")
+
+    def _elegir_excel(self):
+        carpeta = filedialog.askdirectory(
+            parent=self.winfo_toplevel(),
+            title="Carpeta para los Excel de reportes (Google Drive…)")
+        if not carpeta:
+            return
+        try:
+            respaldos.poner_carpeta_excel(carpeta)
+        except OSError as error:
+            self.alerta.mostrar(f"No se pudo guardar la carpeta: {error}", "error")
+            return
+        self.refrescar()
+        self.alerta.mostrar("Listo. Desde ahora cada Excel que exportes se "
+                            "guardará ahí.", "ok")
+
+    def _quitar_excel_accion(self):
+        respaldos.poner_carpeta_excel(None)
+        self.refrescar()
+        self.alerta.mostrar("Los Excel volverán a guardarse en la carpeta "
+                            "«reportes» de esta PC. Los que ya estaban en la otra "
+                            "carpeta no se borran.", "ok")
 
     def _abrir_carpeta(self):
         try:

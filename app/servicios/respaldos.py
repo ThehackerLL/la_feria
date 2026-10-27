@@ -62,6 +62,22 @@ def poner_carpeta_extra(carpeta):
     _guardar_ajustes(ajustes)
 
 
+def carpeta_excel():
+    """Carpeta donde se copia también cada Excel de reportes (Path), o None."""
+    texto = leer_ajustes().get("excel_extra", "")
+    return Path(texto) if texto else None
+
+
+def poner_carpeta_excel(carpeta):
+    """Guarda la carpeta de los Excel. None o '' la quita."""
+    ajustes = leer_ajustes()
+    if carpeta:
+        ajustes["excel_extra"] = str(carpeta)
+    else:
+        ajustes.pop("excel_extra", None)
+    _guardar_ajustes(ajustes)
+
+
 # ----------------------------------------------------------------- listado
 def _leer_nombre(ruta):
     """(fecha, tipo) según el nombre del archivo, o None si no es un respaldo."""

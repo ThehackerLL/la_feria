@@ -14,7 +14,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from app import config
-from app.servicios import caja, reportes
+from app.servicios import caja, reportes, respaldos
 
 FUENTE = "Arial"
 AZUL, GRIS = "2B4C8C", "E6E9EE"
@@ -216,15 +216,32 @@ def _fecha(hoy):
 
 
 # ------------------------------------------------------------------ principal
+def carpeta_de_salida(carpeta=None):
+    """Dónde se guardará el Excel.
+
+    Si hay una carpeta elegida en Configuración (p. ej. Google Drive) y está
+    disponible, ahí; si no está disponible, la carpeta «reportes» de la PC.
+    """
+    if carpeta:
+        return carpeta
+    elegida = respaldos.carpeta_excel()
+    if elegida is not None and elegida.exists():
+        return elegida
+    return config.REPORTES_DIR
+
+
 def exportar_reporte(periodo, con_costos=False, hoy=None, carpeta=None):
     """Crea el Excel del periodo y devuelve su ruta (Path).
+
+    Se guarda en la carpeta elegida en Configuración (Google Drive) si está
+    disponible; si no, en «reportes». No se hacen dos copias.
 
     Si el archivo del mismo día ya existe y está abierto en Excel, guarda uno
     nuevo con un número al final (Reporte_mes_2026-10-22_2.xlsx).
     Con costos el nombre termina en _con_costos..
     """
     hoy = _fecha(hoy)
-    carpeta = carpeta or config.REPORTES_DIR
+    carpeta = carpeta_de_salida(carpeta)
     carpeta.mkdir(parents=True, exist_ok=True)
     r = reportes.resumen_periodo(periodo, hoy)
     wb = Workbook()
@@ -245,4 +262,4 @@ def exportar_reporte(periodo, con_costos=False, hoy=None, carpeta=None):
         except PermissionError:       # el archivo está abierto en Excel
             continue
     raise ValueError("No se pudo guardar el Excel: cierra los Excel abiertos de "
-                     "la carpeta «reportes» e inténtalo otra vez.")
+                     f"la carpeta «{carpeta.name}» e inténtalo otra vez.")

@@ -13,7 +13,7 @@ import customtkinter as ctk
 from app.interfaz import estilos as e
 from app.interfaz.componentes import Alerta, Tabla, TarjetaResumen, boton, confirmar
 from app.interfaz.dialogo_credito import fecha_corta
-from app.servicios import excel, reportes
+from app.servicios import excel, reportes, respaldos
 from app.utilidades.formato import entero, moneda
 
 _MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio",
@@ -100,7 +100,8 @@ class PantallaReportes(ctk.CTkFrame):
         self.refrescar()
 
     def _exportar(self):
-        """Guarda el periodo elegido en un Excel (carpeta «reportes»). Lleva la
+        """Guarda el periodo elegido en un Excel (en la carpeta de Drive elegida
+        en Configuración, o en «reportes»). Lleva la
         ganancia y los costos solo si la ganancia está visible en pantalla."""
         try:
             ruta = excel.exportar_reporte(self._periodo,
@@ -108,9 +109,22 @@ class PantallaReportes(ctk.CTkFrame):
         except (ValueError, OSError) as error:
             self.alerta.mostrar(str(error), "error")
             return
-        self.alerta.mostrar(f"Excel guardado: {ruta.name}", "ok", segundos=10)
+        elegida = respaldos.carpeta_excel()
+        if elegida is not None and ruta.parent == elegida:
+            self.alerta.mostrar(f"Excel guardado en Google Drive: {ruta.name}",
+                                "ok", segundos=10)
+            copia = ""
+        elif elegida is not None:             # Drive no estaba disponible
+            self.alerta.mostrar(
+                f"Google Drive no está disponible: el Excel se guardó en esta PC "
+                f"({ruta.name}). Abre Google Drive y exporta de nuevo si lo quieres allí.",
+                "aviso", segundos=12)
+            copia = "\nOjo: Google Drive no estaba disponible, por eso quedó en la PC.\n"
+        else:
+            self.alerta.mostrar(f"Excel guardado: {ruta.name}", "ok", segundos=10)
+            copia = ""
         if confirmar(self, "Excel listo",
-                     f"Se guardó en:\n{ruta}\n\n"
+                     f"Se guardó en:\n{ruta}\n{copia}\n"
                      + ("Incluye costos y ganancia." if self._ver_ganancia else
                         "No incluye costos ni ganancia.") + "\n\n¿Abrirlo ahora?",
                      texto_si="Abrir"):
