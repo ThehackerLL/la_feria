@@ -13,8 +13,8 @@ from datetime import datetime
 import customtkinter as ctk
 
 from app.interfaz import estilos as e
-from app.interfaz.componentes import (Alerta, Campo, Tabla, aviso, boton,
-                                      confirmar)
+from app.interfaz.componentes import (Alerta, Campo, Tabla, _Dialogo, aviso,
+                                      boton, confirmar)
 from app.interfaz.dialogo_cliente import elegir_cliente
 from app.interfaz.dialogo_credito import fecha_corta, plan_credito
 from app.interfaz.indicadores_dia import FranjaIndicadores
@@ -53,6 +53,18 @@ TAMANO_PAQUETE = "12"      # el que aparece de entrada; se puede cambiar
 FILAS_LISTA, FILAS_LISTA_CORTA = 5, 2    # filas de la lista de productos
 ALTO_MINIMO_LISTA_COMPLETA = 700         # por debajo, la lista se acorta
 ABREVIATURA = {DOCENAS: "doc.", PAQUETES: "paq."}
+
+
+class _ConfirmarCobro(_Dialogo):
+    """«¿Cobrar esta venta?» Todavía NO se ha guardado nada: la X, Esc o
+    Cancelar vuelven a la venta (para agregar otro producto, por ejemplo) y
+    solo «Cobrar» (o Enter) la registra. Se lee .resultado: True = cobrar."""
+
+    def __init__(self, padre, mensaje):
+        super().__init__(padre, "¿Cobrar esta venta?", mensaje,
+                         [("Cancelar", "secundario", False),
+                          ("Cobrar", "ok", True)])
+        self.bind("<Return>", lambda _ev: self._cerrar(True))
 
 
 class _DialogoEspera(ctk.CTkToplevel):
@@ -748,6 +760,24 @@ class PantallaVentas(ctk.CTkFrame):
             if total <= 0:
                 raise ValueError("El total no puede ser 0: el descuento cubre "
                                  "todo el subtotal.")
+        except ValueError as error:
+            self.alerta.mostrar(str(error), "error")
+            return
+        # Antes de guardar se pregunta: X, Esc o Cancelar no registran nada y la
+        # venta sigue en pantalla (por si se adelantó y falta un producto).
+        cliente = self._cliente.nombre if self._cliente else clientes.PUBLICO_GENERAL
+        unidades = sum(int(i["cantidad"]) for i in items)
+        resumen = [f"Total: {moneda(total)}"]
+        if descuento:
+            resumen.append(f"Descuento: {moneda(descuento)}")
+        resumen += [f"Forma de pago: {forma}", f"Cliente: {cliente}",
+                    f"{len(items)} {'producto' if len(items) == 1 else 'productos'}"
+                    f" · {entero(unidades)} {'unidad' if unidades == 1 else 'unidades'}",
+                    "", " "]
+        if not self._confirmar_cobro("\n".join(resumen)):
+            self.f_buscar.foco()
+            return
+        try:
             resultado = ventas.registrar_venta(
                 items, [{"forma_pago": forma, "monto": total}],
                 cliente_id=self._cliente.id if self._cliente else None,
@@ -757,23 +787,26 @@ class PantallaVentas(ctk.CTkFrame):
             self.refrescar()           # el stock pudo haber cambiado
             return
         self._limpiar_venta()
-        self.alerta.ocultar()
-        lineas = [f"Total: {moneda(resultado['total'])}",
-                  f"Forma de pago: {forma}",
-                  f"Cliente: {resultado['cliente']}"]
-        if resultado["descuento"]:
-            lineas.insert(1, f"Descuento: {moneda(resultado['descuento'])}")
+        self._franja.refrescar()
+        # Ya está guardada: un mensaje que se quita solo, sin botón que confunda.
+        self.alerta.mostrar(
+            f"Venta {resultado['numero']} registrada · Total "
+            f"{moneda(resultado['total'])} · {forma} · {resultado['cliente']}",
+            "ok", segundos=6)
         if resultado["stock_bajo"]:
-            lineas.append("")
-            lineas.append("Stock bajo:")
+            lineas = ["Stock bajo:"]
             for p in resultado["stock_bajo"]:
                 cuando = ("se agotó" if p["stock"] <= 0
                           else f"quedan {entero(p['stock'])}")
                 lineas.append(f"• {p['nombre']}: {cuando}")
-        self._franja.refrescar()
-        aviso(self, f"Venta {resultado['numero']} registrada",
-              "\n".join(lineas))
+            aviso(self, "Stock bajo", "\n".join(lineas))
         self.f_buscar.foco()
+
+    def _confirmar_cobro(self, mensaje):
+        """True si el usuario confirma el cobro (Cobrar o Enter)."""
+        dialogo = _ConfirmarCobro(self, mensaje)
+        self.wait_window(dialogo)
+        return dialogo.resultado
 
     def _a_credito(self):
         """Vende a crédito: abono inicial (puede ser 0) y el resto en cuotas.
