@@ -12,11 +12,14 @@ Yape/Plin, transferencia y tarjeta no entran al cajón: se llaman "digital".
 Las ventas a crédito cuentan como vendidas el día que se hicieron; el dinero
 cuenta el día que realmente se cobra (abono inicial o cuota).
 
-Las ventas anuladas no suman. Las compras hechas antes de que existieran los
+Las ventas anuladas no suman como vendidas, pero el dinero que se cobró de ellas
+sigue contando el día que se cobró; al anular, lo devuelto sale de la caja del
+día de la anulación (así los días cerrados no cambian). Las compras hechas antes de que existieran los
 pagos de compra no tienen pagos registrados y por eso no aparecen aquí.
 """
 from datetime import date, datetime
 
+from app.servicios import anulaciones
 from app.servicios.inventario import _usar
 from app.servicios.ventas import FORMAS_PAGO
 
@@ -55,6 +58,7 @@ def _dia(hoy):
 
 def _preparar(con):
     con.execute(_TABLA)
+    anulaciones.preparar(con)
     return con
 
 
@@ -127,14 +131,15 @@ def resumen_dia(hoy=None, con=None):
             (f,)).fetchone()[0]
 
         por = {forma: {"forma": forma, "cobrado_ventas": 0.0, "cobrado_abonos": 0.0,
-                       "pagado_compras": 0.0, "pagado_cuotas": 0.0}
+                       "pagado_compras": 0.0, "pagado_cuotas": 0.0,
+                       "devuelto": 0.0}
                for forma in FORMAS_PAGO}
 
         for fila in c.execute(
                 "SELECT p.forma_pago AS forma, SUM(p.monto) AS m, "
                 "CASE WHEN substr(v.fecha, 1, 10) = ? THEN 'venta' ELSE 'abono' END AS o "
                 "FROM venta_pagos p JOIN ventas v ON v.id = p.venta_id "
-                "WHERE substr(p.fecha, 1, 10) = ? AND v.estado = 'activa' "
+                "WHERE substr(p.fecha, 1, 10) = ? "
                 "GROUP BY p.forma_pago, o", (f, f)):
             if fila["forma"] in por:
                 clave = "cobrado_ventas" if fila["o"] == "venta" else "cobrado_abonos"
@@ -150,14 +155,27 @@ def resumen_dia(hoy=None, con=None):
                 clave = "pagado_compras" if fila["o"] == "compra" else "pagado_cuotas"
                 por[fila["forma"]][clave] += fila["m"]
 
+        for forma, monto in anulaciones.devuelto_por_forma(f, c).items():
+            if forma in por:
+                por[forma]["devuelto"] += monto
+
+        # Lo que aún deben las ventas vigentes (sin contar las anuladas).
+        cobrado_vigentes = c.execute(
+            "SELECT COALESCE(SUM(p.monto), 0) FROM venta_pagos p "
+            "JOIN ventas v ON v.id = p.venta_id "
+            "WHERE v.estado = 'activa' AND substr(v.fecha, 1, 10) = ? "
+            "AND substr(p.fecha, 1, 10) = ?", (f, f)).fetchone()[0]
+
     filas = []
     for forma in FORMAS_PAGO:
         d = por[forma]
         for clave in ("cobrado_ventas", "cobrado_abonos", "pagado_compras",
-                      "pagado_cuotas"):
+                      "pagado_cuotas", "devuelto"):
             d[clave] = round(d[clave], 2)
         d["cobrado"] = round(d["cobrado_ventas"] + d["cobrado_abonos"], 2)
-        d["pagado"] = round(d["pagado_compras"] + d["pagado_cuotas"], 2)
+        # «pagado» = todo lo que sale: compras, cuotas y devoluciones.
+        d["pagado"] = round(d["pagado_compras"] + d["pagado_cuotas"]
+                            + d["devuelto"], 2)
         filas.append(d)
 
     def suma(clave, formas=None):
@@ -172,7 +190,8 @@ def resumen_dia(hoy=None, con=None):
         "fecha": f, "dia": dia,
         "ventas": ventas["n"], "vendido": vendido,
         "ganancia": round(vendido - costo, 2),
-        "a_credito": round(max(0.0, vendido - cobrado_ventas), 2),
+        "a_credito": round(max(0.0, vendido - cobrado_vigentes), 2),
+        "devuelto_total": suma("devuelto"),
         "por_forma": filas,
         "cobrado_ventas": cobrado_ventas,
         "cobrado_abonos": suma("cobrado_abonos"),

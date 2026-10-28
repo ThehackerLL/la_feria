@@ -26,7 +26,7 @@ COLUMNAS_COBROS = [
     ("forma", "", 90, "w", True),
     ("ventas", "Cobrado en ventas", 160, "e"),
     ("abonos", "Abonos y cuotas", 145, "e"),
-    ("pagado", "Pagado", 100, "e"),
+    ("pagado", "Pagado y devuelto", 140, "e"),
     ("neto", "Neto", 100, "e"),
 ]
 COLUMNAS_HISTORIAL = [
@@ -43,6 +43,7 @@ ESTADO_TEXTO = {caja.ABIERTA: "Abierta", caja.CERRADA: "Cerrada",
 # (botón, módulo, clase): pantallas que se cargan cuando existen
 SECCIONES = [
     ("Caja del día", None, None),
+    ("Ventas hechas", "ventas_hechas", "PantallaVentasHechas"),
     ("Reportes", "reportes", "PantallaReportes"),
     ("Productos", "movimiento", "PantallaMovimiento"),
 ]
