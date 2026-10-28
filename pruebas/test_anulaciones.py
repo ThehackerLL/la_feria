@@ -151,7 +151,7 @@ class PruebasListado(BaseTest):
         self.assertEqual(estados, {"V-000001": "activa", "V-000002": "anulada"})
 
 
-class PruebasDevolucionParcial(BaseTest):
+class BaseDosProductos(BaseTest):
     def setUp(self):
         super().setUp()
         self.otro = inventario.crear_producto(
@@ -173,6 +173,9 @@ class PruebasDevolucionParcial(BaseTest):
     def stock_otro(self):
         return inventario.obtener_producto(self.otro.id).stock
 
+
+
+class PruebasDevolucionParcial(BaseDosProductos):
     def test_devuelve_un_producto_completo(self):
         v = self.venta_de_dos([{"forma_pago": EF, "monto": 300}])
         vid = v["venta_id"]
@@ -299,6 +302,111 @@ class PruebasDevolucionParcial(BaseTest):
         p = anulaciones.vista_previa_devolucion(
             vid, self.linea(vid, self.producto)["id"], 3)
         self.assertEqual((p["valor"], p["dinero"]), (60, 60))
+        self.assertEqual(anulaciones.detalle_venta(vid)["total"], 300)
+
+
+class PruebasCambio(BaseDosProductos):
+    """Cambio de producto (usa la misma venta de 10 polos y 4 shorts = 300)."""
+
+    def setUp(self):
+        super().setUp()
+        self.gorra = inventario.crear_producto(
+            "Gorra", "Accesorios", costo=12, precio_unidad=30, precio_mayor=26,
+            stock=20)
+
+    def stock_gorra(self):
+        return inventario.obtener_producto(self.gorra.id).stock
+
+    def cambiar(self, vid, producto, cantidad, n_nuevas, precio=30, **extra):
+        return anulaciones.cambiar_producto(
+            vid, self.linea(vid, producto)["id"], cantidad, self.gorra.id,
+            n_nuevas, precio, **extra)
+
+    def test_lo_nuevo_vale_mas_el_cliente_paga_la_diferencia(self):
+        vid = self.venta_de_dos([{"forma_pago": EF, "monto": 300}])["venta_id"]
+        r = self.cambiar(vid, self.producto, 10, 8)      # 200 por 240
+        self.assertEqual(r["diferencia"], 40)
+        d = anulaciones.detalle_venta(vid)
+        self.assertEqual((d["total"], d["pagado"], d["debe"]), (340, 340, 0))
+        self.assertEqual(sorted(l["nombre"] for l in d["lineas"]),
+                         ["Gorra", "Short"])
+        self.assertEqual((self.stock(), self.stock_gorra()), (50, 12))
+        self.assertEqual(caja.resumen_dia()["efectivo_esperado"], 440)
+        self.assertEqual(d["devoluciones"][0]["nombre_nuevo"], "Gorra")
+
+    def test_lo_nuevo_vale_menos_se_devuelve_la_diferencia(self):
+        vid = self.venta_de_dos([{"forma_pago": EF, "monto": 300}])["venta_id"]
+        r = self.cambiar(vid, self.otro, 4, 2, forma_pago=YAPE)   # 100 por 60
+        self.assertEqual(r["diferencia"], -40)
+        d = anulaciones.detalle_venta(vid)
+        self.assertEqual((d["total"], d["pagado"]), (260, 260))
+        self.assertEqual(caja.resumen_dia()["digital_pagado"], 40)
+
+    def test_mismo_valor_no_mueve_dinero(self):
+        vid = self.venta_de_dos([{"forma_pago": EF, "monto": 300}])["venta_id"]
+        r = self.cambiar(vid, self.otro, 4, 1, precio=100)
+        self.assertEqual(r["diferencia"], 0)
+        self.assertEqual(caja.resumen_dia()["efectivo_esperado"], 400)
+
+    def test_cambio_de_todo_lo_vendido_si_se_permite(self):
+        vid = anulaciones_venta = self.vender(
+            5, [{"forma_pago": EF, "monto": 100}])["venta_id"]
+        r = self.cambiar(vid, self.producto, 5, 4)       # 100 por 120
+        self.assertEqual(r["diferencia"], 20)
+        d = anulaciones.detalle_venta(vid)
+        self.assertEqual((d["estado"], d["total"]), ("activa", 120))
+
+    def test_validaciones(self):
+        vid = self.venta_de_dos([{"forma_pago": EF, "monto": 300}])["venta_id"]
+        polo = self.linea(vid, self.producto)["id"]
+        with self.assertRaises(ValueError):              # mismo producto
+            anulaciones.cambiar_producto(vid, polo, 1, self.producto.id, 1, 20)
+        with self.assertRaises(ValueError):              # sin stock
+            self.cambiar(vid, self.producto, 1, 21)
+        with self.assertRaises(ValueError):              # precio inválido
+            self.cambiar(vid, self.producto, 1, 1, precio=0)
+        with self.assertRaises(ValueError):              # más de lo vendido
+            self.cambiar(vid, self.producto, 11, 1)
+        with self.assertRaises(ValueError):              # producto inexistente
+            anulaciones.cambiar_producto(vid, polo, 1, 9999, 1, 30)
+        self.assertEqual(anulaciones.detalle_venta(vid)["total"], 300)
+        self.assertEqual((self.stock(), self.stock_gorra()), (40, 20))
+
+    def test_danado_no_repone_el_producto_devuelto(self):
+        vid = self.venta_de_dos([{"forma_pago": EF, "monto": 300}])["venta_id"]
+        self.cambiar(vid, self.producto, 3, 1, volver_al_stock=False)
+        self.assertEqual(self.stock(), 40)               # no se repusieron
+        self.assertEqual(self.stock_gorra(), 19)
+
+    def test_credito_la_deuda_baja_y_la_diferencia_se_paga_ahora(self):
+        cliente = clientes.crear_cliente("Ana", "999111222")
+        vid = self.venta_de_dos([{"forma_pago": EF, "monto": 100}],
+                                cliente_id=cliente.id,
+                                credito={"cuotas": 2, "dias": 15})["venta_id"]
+        r = self.cambiar(vid, self.otro, 4, 5)           # 100 por 150
+        self.assertEqual(r["diferencia"], 150)           # la deuda baja 100, paga 150
+        d = anulaciones.detalle_venta(vid)
+        self.assertEqual((d["total"], d["pagado"], d["debe"]), (350, 250, 100))
+        with transaccion() as con:
+            cuotas = con.execute("SELECT SUM(monto - pagado) FROM credito_cuotas "
+                                 "WHERE venta_id = ?", (vid,)).fetchone()[0]
+        self.assertEqual(cuotas, 100)
+
+    def test_anular_despues_de_un_cambio(self):
+        vid = self.venta_de_dos([{"forma_pago": EF, "monto": 300}])["venta_id"]
+        self.cambiar(vid, self.producto, 10, 8)
+        r = anulaciones.anular_venta(vid, "Se arrepintió")
+        self.assertEqual(r["total_devuelto"], 340)
+        self.assertEqual((self.stock(), self.stock_otro(), self.stock_gorra()),
+                         (50, 40, 20))
+        self.assertEqual(caja.resumen_dia()["efectivo_esperado"], 100)
+
+    def test_vista_previa_no_guarda(self):
+        vid = self.venta_de_dos([{"forma_pago": EF, "monto": 300}])["venta_id"]
+        p = anulaciones.vista_previa_cambio(
+            vid, self.linea(vid, self.producto)["id"], 10, self.gorra.id, 8, 30)
+        self.assertEqual((p["valor"], p["valor_nuevo"], p["diferencia"]),
+                         (200, 240, 40))
         self.assertEqual(anulaciones.detalle_venta(vid)["total"], 300)
 
 

@@ -8,6 +8,9 @@ fecha y el motivo. Al anular:
   (los días ya cerrados no cambian);
 - si era a crédito, la deuda deja de existir (las cuotas ya no se cobran).
 
+Cambio: devolución parcial más un producto nuevo en la misma venta; solo se
+mueve la diferencia de dinero.
+
 Devolución parcial: el cliente devuelve un producto (o parte de sus unidades)
 y se queda con el resto. La venta se reduce (líneas, total y cuotas), así que
 los reportes y la caja salen bien solos. Lo devuelto primero baja lo que el
@@ -58,6 +61,12 @@ def preparar(con):
     if "al_stock" not in columnas:       # bases creadas antes de esta opción
         con.execute("ALTER TABLE anulaciones ADD COLUMN al_stock "
                     "INTEGER NOT NULL DEFAULT 1")
+    columnas = {f["name"] for f in con.execute("PRAGMA table_info(devoluciones)")}
+    for nombre, tipo in (("producto_nuevo_id", "INTEGER"),
+                         ("cantidad_nueva", "INTEGER"),
+                         ("diferencia", "REAL")):
+        if nombre not in columnas:       # columnas del cambio de producto
+            con.execute(f"ALTER TABLE devoluciones ADD COLUMN {nombre} {tipo}")
     return con
 
 
@@ -155,8 +164,10 @@ def detalle_venta(venta_id, con=None):
         pagado = round(sum(m for _, m in por_forma), 2)
         devs = [dict(f) for f in c.execute(
             "SELECT d.fecha, d.cantidad, d.valor, d.dinero, d.forma_pago, "
-            "d.al_stock, p.nombre FROM devoluciones d "
+            "d.al_stock, p.nombre, d.cantidad_nueva, d.diferencia, "
+            "n.nombre AS nombre_nuevo FROM devoluciones d "
             "JOIN productos p ON p.id = d.producto_id "
+            "LEFT JOIN productos n ON n.id = d.producto_nuevo_id "
             "WHERE d.venta_id = ? ORDER BY d.id", (venta_id,))]
         d = dict(v)
         d.update({"numero": numero_venta(venta_id), "lineas": lineas,
@@ -221,7 +232,7 @@ def anular_venta(venta_id, motivo, volver_al_stock=True, ahora=None, con=None):
 
 
 # ------------------------------------------------------- devolución parcial
-def _calcular_devolucion(c, venta_id, detalle_id, cantidad):
+def _calcular_devolucion(c, venta_id, detalle_id, cantidad, permitir_todo=False):
     """Valida y calcula una devolución sin guardar nada."""
     v = c.execute("SELECT id, estado, subtotal, descuento, total FROM ventas "
                   "WHERE id = ?", (venta_id,)).fetchone()
@@ -243,7 +254,7 @@ def _calcular_devolucion(c, venta_id, detalle_id, cantidad):
         raise ValueError(f"Las unidades deben ser de 1 a {linea['cantidad']}.")
     restantes = c.execute("SELECT SUM(cantidad) FROM venta_detalle "
                           "WHERE venta_id = ?", (venta_id,)).fetchone()[0]
-    if cantidad >= restantes:
+    if cantidad >= restantes and not permitir_todo:
         raise ValueError("Está devolviendo todo: usa «Anular venta».")
 
     bruto = round(cantidad * linea["precio_unitario"], 2)
@@ -257,6 +268,42 @@ def _calcular_devolucion(c, venta_id, detalle_id, cantidad):
     return {"linea": linea, "cantidad": cantidad, "bruto": bruto,
             "descuento": desc, "valor": valor, "baja_deuda": baja_deuda,
             "dinero": dinero, "nombre": linea["nombre"]}
+
+
+def _aplicar_devolucion(c, venta_id, detalle_id, r, volver_al_stock):
+    """Quita lo devuelto de la venta, repone stock y rebaja la deuda."""
+    linea, n = r["linea"], r["cantidad"]
+    # La venta queda con lo que el cliente se quedó.
+    if n == linea["cantidad"]:
+        c.execute("DELETE FROM venta_detalle WHERE id = ?", (detalle_id,))
+    else:
+        c.execute("UPDATE venta_detalle SET cantidad = cantidad - ? "
+                  "WHERE id = ?", (n, detalle_id))
+    c.execute("UPDATE ventas SET subtotal = ROUND(subtotal - ?, 2), "
+              "descuento = ROUND(descuento - ?, 2), "
+              "total = ROUND(total - ?, 2) WHERE id = ?",
+              (r["bruto"], r["descuento"], r["valor"], venta_id))
+    if volver_al_stock:
+        c.execute("UPDATE productos SET stock = stock + ? WHERE id = ?",
+                  (n, linea["producto_id"]))
+
+    # Deuda: se rebajan las últimas cuotas pendientes.
+    falta = r["baja_deuda"]
+    for cuota in c.execute(
+            "SELECT id, monto, pagado FROM credito_cuotas "
+            "WHERE venta_id = ? ORDER BY numero DESC", (venta_id,)).fetchall():
+        if falta <= 0:
+            break
+        quitar = round(min(falta, cuota["monto"] - cuota["pagado"]), 2)
+        if quitar <= 0:
+            continue
+        nuevo = round(cuota["monto"] - quitar, 2)
+        if nuevo <= 0:
+            c.execute("DELETE FROM credito_cuotas WHERE id = ?", (cuota["id"],))
+        else:
+            c.execute("UPDATE credito_cuotas SET monto = ? WHERE id = ?",
+                      (nuevo, cuota["id"]))
+        falta = round(falta - quitar, 2)
 
 
 def vista_previa_devolucion(venta_id, detalle_id, cantidad, con=None):
@@ -282,38 +329,7 @@ def devolver_producto(venta_id, detalle_id, cantidad, forma_pago="Efectivo",
         if r["dinero"] > 0 and forma_pago not in FORMAS_PAGO:
             raise ValueError("Elige en qué forma se devuelve el dinero.")
         linea, n = r["linea"], r["cantidad"]
-
-        # La venta queda con lo que el cliente se quedó.
-        if n == linea["cantidad"]:
-            c.execute("DELETE FROM venta_detalle WHERE id = ?", (detalle_id,))
-        else:
-            c.execute("UPDATE venta_detalle SET cantidad = cantidad - ? "
-                      "WHERE id = ?", (n, detalle_id))
-        c.execute("UPDATE ventas SET subtotal = ROUND(subtotal - ?, 2), "
-                  "descuento = ROUND(descuento - ?, 2), "
-                  "total = ROUND(total - ?, 2) WHERE id = ?",
-                  (r["bruto"], r["descuento"], r["valor"], venta_id))
-        if volver_al_stock:
-            c.execute("UPDATE productos SET stock = stock + ? WHERE id = ?",
-                      (n, linea["producto_id"]))
-
-        # Deuda: se rebajan las últimas cuotas pendientes.
-        falta = r["baja_deuda"]
-        for cuota in c.execute(
-                "SELECT id, monto, pagado FROM credito_cuotas "
-                "WHERE venta_id = ? ORDER BY numero DESC", (venta_id,)).fetchall():
-            if falta <= 0:
-                break
-            quitar = round(min(falta, cuota["monto"] - cuota["pagado"]), 2)
-            if quitar <= 0:
-                continue
-            nuevo = round(cuota["monto"] - quitar, 2)
-            if nuevo <= 0:
-                c.execute("DELETE FROM credito_cuotas WHERE id = ?", (cuota["id"],))
-            else:
-                c.execute("UPDATE credito_cuotas SET monto = ? WHERE id = ?",
-                          (nuevo, cuota["id"]))
-            falta = round(falta - quitar, 2)
+        _aplicar_devolucion(c, venta_id, detalle_id, r, volver_al_stock)
 
         if r["dinero"] > 0:
             c.execute("INSERT INTO reembolsos (venta_id, fecha, forma_pago, "
@@ -329,3 +345,98 @@ def devolver_producto(venta_id, detalle_id, cantidad, forma_pago="Efectivo",
             "producto": r["nombre"], "cantidad": n, "valor": r["valor"],
             "baja_deuda": r["baja_deuda"], "dinero": r["dinero"],
             "volvio_al_stock": bool(volver_al_stock)}
+
+
+# ----------------------------------------------------------------- cambio
+def _calcular_cambio(c, venta_id, detalle_id, cantidad, nuevo_id,
+                     cantidad_nueva, precio):
+    r = _calcular_devolucion(c, venta_id, detalle_id, cantidad, permitir_todo=True)
+    nuevo = c.execute("SELECT id, nombre, costo, precio_mayor, stock, activo "
+                      "FROM productos WHERE id = ?", (nuevo_id,)).fetchone()
+    if nuevo is None or not nuevo["activo"]:
+        raise ValueError("Elige el producto que se lleva.")
+    if nuevo["id"] == r["linea"]["producto_id"]:
+        raise ValueError("Elige un producto distinto al que devuelve.")
+    try:
+        cantidad_nueva = int(cantidad_nueva)
+        precio = round(float(str(precio).replace(",", ".")), 6)
+    except (TypeError, ValueError):
+        raise ValueError("Revisa las unidades y el precio del producto nuevo.") from None
+    if cantidad_nueva < 1:
+        raise ValueError("Las unidades del producto nuevo deben ser 1 o más.")
+    if precio <= 0:
+        raise ValueError("El precio del producto nuevo debe ser mayor a 0.")
+    if cantidad_nueva > nuevo["stock"]:
+        raise ValueError(f"{nuevo['nombre']}: solo hay {nuevo['stock']} en stock.")
+    valor_nuevo = round(cantidad_nueva * precio, 2)
+    # Lo que se mueve de verdad: lo nuevo menos lo que se le devolvería en dinero.
+    diferencia = round(valor_nuevo - r["dinero"], 2)
+    r.update({"nuevo": nuevo, "cantidad_nueva": cantidad_nueva, "precio": precio,
+              "valor_nuevo": valor_nuevo, "diferencia": diferencia})
+    return r
+
+
+def vista_previa_cambio(venta_id, detalle_id, cantidad, nuevo_id,
+                        cantidad_nueva, precio, con=None):
+    """diferencia > 0: el cliente paga; < 0: se le devuelve; 0: nada."""
+    with _usar(con) as c:
+        preparar(c)
+        r = _calcular_cambio(c, venta_id, detalle_id, cantidad, nuevo_id,
+                             cantidad_nueva, precio)
+    return {k: r[k] for k in ("valor", "valor_nuevo", "diferencia", "baja_deuda")}
+
+
+def cambiar_producto(venta_id, detalle_id, cantidad, nuevo_id, cantidad_nueva,
+                     precio, forma_pago="Efectivo", volver_al_stock=True,
+                     ahora=None, con=None):
+    """Cambio: el cliente devuelve un producto y se lleva otro en su lugar.
+
+    Es una devolución parcial más un producto nuevo en la misma venta. Solo se
+    mueve la diferencia: si lo nuevo vale más el cliente paga la diferencia; si
+    vale menos se le devuelve. Entra o sale de la caja de hoy.
+    """
+    fecha = _ahora(ahora)
+    with _usar(con) as c:
+        preparar(c)
+        r = _calcular_cambio(c, venta_id, detalle_id, cantidad, nuevo_id,
+                             cantidad_nueva, precio)
+        if r["diferencia"] != 0 and forma_pago not in FORMAS_PAGO:
+            raise ValueError("Elige la forma de pago de la diferencia.")
+        linea, n, nuevo = r["linea"], r["cantidad"], r["nuevo"]
+
+        _aplicar_devolucion(c, venta_id, detalle_id, r, volver_al_stock)
+
+        tipo = "mayor" if abs(r["precio"] - nuevo["precio_mayor"]) < 0.005 else "unidad"
+        c.execute("INSERT INTO venta_detalle (venta_id, producto_id, cantidad, "
+                  "tipo, precio_unitario, costo_unitario) VALUES (?, ?, ?, ?, ?, ?)",
+                  (venta_id, nuevo["id"], r["cantidad_nueva"], tipo, r["precio"],
+                   nuevo["costo"]))
+        c.execute("UPDATE ventas SET subtotal = ROUND(subtotal + ?, 2), "
+                  "total = ROUND(total + ?, 2) WHERE id = ?",
+                  (r["valor_nuevo"], r["valor_nuevo"], venta_id))
+        actualizado = c.execute(
+            "UPDATE productos SET stock = stock - ? WHERE id = ? AND stock >= ?",
+            (r["cantidad_nueva"], nuevo["id"], r["cantidad_nueva"])).rowcount
+        if actualizado != 1:
+            raise ValueError(f"{nuevo['nombre']}: el stock cambió y ya no alcanza.")
+
+        if r["diferencia"] > 0:
+            c.execute("INSERT INTO venta_pagos (venta_id, fecha, forma_pago, monto) "
+                      "VALUES (?, ?, ?, ?)",
+                      (venta_id, fecha, forma_pago, r["diferencia"]))
+        elif r["diferencia"] < 0:
+            c.execute("INSERT INTO reembolsos (venta_id, fecha, forma_pago, monto) "
+                      "VALUES (?, ?, ?, ?)",
+                      (venta_id, fecha, forma_pago, -r["diferencia"]))
+        c.execute("INSERT INTO devoluciones (venta_id, producto_id, fecha, "
+                  "cantidad, valor, dinero, forma_pago, al_stock, "
+                  "producto_nuevo_id, cantidad_nueva, diferencia) "
+                  "VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)",
+                  (venta_id, linea["producto_id"], fecha, n, r["valor"],
+                   forma_pago if r["diferencia"] else "",
+                   1 if volver_al_stock else 0, nuevo["id"],
+                   r["cantidad_nueva"], r["diferencia"]))
+    return {"venta_id": venta_id, "numero": numero_venta(venta_id),
+            "devuelto": r["nombre"], "cantidad": n, "nuevo": nuevo["nombre"],
+            "cantidad_nueva": r["cantidad_nueva"], "valor_nuevo": r["valor_nuevo"],
+            "diferencia": r["diferencia"], "volvio_al_stock": bool(volver_al_stock)}

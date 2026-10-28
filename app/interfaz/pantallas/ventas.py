@@ -6,7 +6,9 @@ lista. La cantidad puede ir en unidades, docenas o paquetes: se convierte a
 UNIDADES (el precio es siempre por unidad y el stock se descuenta en unidades). Abajo: cliente (opcional), descuento, forma de pago y COBRAR.
 «A crédito» vende a un cliente guardado con abono inicial y cuotas.
 Se puede poner una venta en espera (solo en memoria) para atender a otra
-persona. Atajos: F2 busca un producto y F9 cobra.
+persona. Si el cliente pide envío, «Envío» guarda los datos antes de cobrar y
+al cobrar queda en la pestaña Envíos, ligado a la venta. Atajos: F2 busca un
+producto y F9 cobra.
 """
 from datetime import datetime
 
@@ -18,7 +20,8 @@ from app.interfaz.componentes import (Alerta, Campo, Tabla, _Dialogo, aviso,
 from app.interfaz.dialogo_cliente import elegir_cliente
 from app.interfaz.dialogo_credito import fecha_corta, plan_credito
 from app.interfaz.indicadores_dia import FranjaIndicadores
-from app.servicios import clientes, inventario, paquetes, ventas
+from app.interfaz.pantallas.envios import DialogoEnvio
+from app.servicios import clientes, envios, inventario, paquetes, ventas
 from app.utilidades.formato import entero, moneda
 from app.utilidades.validaciones import a_entero, a_numero
 
@@ -163,6 +166,7 @@ class PantallaVentas(ctk.CTkFrame):
         self._producto = None      # producto elegido en el buscador
         self._cliente = None       # None = Público general
         self._espera = []          # ventas en espera (solo en memoria)
+        self._envio = None         # datos del envío de esta venta (None = sin envío)
         self._franja = FranjaIndicadores(self)     # venta, ganancia, efectivo, digital
         self._franja.pack(fill="x", pady=(0, e.ESPACIO - 4))
         self.alerta = Alerta(self)
@@ -176,6 +180,7 @@ class PantallaVentas(ctk.CTkFrame):
         self._dibujar_lineas()
         self._buscar()
         self._mostrar_cliente()
+        self._mostrar_envio()
         self._actualizar_espera()
         # Atajos: solo actúan cuando esta pestaña es la que se está viendo.
         ventana = self.winfo_toplevel()
@@ -541,39 +546,55 @@ class PantallaVentas(ctk.CTkFrame):
                                         self._quitar_cliente, "secundario",
                                         ancho=80)
 
-        # Fila 1: descuento, forma de pago y total
+        # Fila 1: envío (opcional)
+        fila_envio = ctk.CTkFrame(pie, fg_color="transparent")
+        fila_envio.grid(row=1, column=0, columnspan=3, sticky="ew",
+                        padx=16, pady=(0, 4))
+        ctk.CTkLabel(fila_envio, text="Envío:",
+                     text_color=e.COLOR_TEXTO_SUAVE).pack(side="left")
+        self._texto_envio = ctk.CTkLabel(fila_envio, text="",
+                                         font=ctk.CTkFont(weight="bold"))
+        self._texto_envio.pack(side="left", padx=(8, 0))
+        self._boton_envio = boton(fila_envio, "Envío", self._elegir_envio,
+                                  "secundario", ancho=190)
+        self._boton_envio.pack(side="right")
+        self._boton_sin_envio = boton(fila_envio, "Quitar",
+                                      self._quitar_envio, "secundario",
+                                      ancho=80)
+
+        # Fila 2: descuento, forma de pago y total
         self.f_descuento = Campo(pie, "Descuento en soles (opcional)",
                                  ancho=170, ayuda="0.00")
-        self.f_descuento.grid(row=1, column=0, sticky="w", padx=(16, 8),
+        self.f_descuento.grid(row=2, column=0, sticky="w", padx=(16, 8),
                               pady=(8, 4))
         self.f_descuento.al_escribir(self._recalcular)
 
         ctk.CTkLabel(pie, text="Forma de pago", anchor="w",
                      text_color=e.COLOR_TEXTO_SUAVE,
                      font=ctk.CTkFont(size=e.TAM_PEQUENO)
-                     ).grid(row=1, column=1, sticky="nw", padx=(8, 8),
+                     ).grid(row=2, column=1, sticky="nw", padx=(8, 8),
                             pady=(8, 0))
         self._pago = ctk.CTkOptionMenu(
             pie, values=list(ventas.FORMAS_PAGO), width=170,
             height=e.ALTO_CONTROL, font=ctk.CTkFont(weight="bold"),
             dropdown_font=ctk.CTkFont(size=e.TAM_TEXTO))
         self._pago.set(ventas.FORMAS_PAGO[0])
-        self._pago.grid(row=1, column=1, sticky="sw", padx=(8, 8), pady=(0, 4))
+        self._pago.grid(row=2, column=1, sticky="sw", padx=(8, 8), pady=(0, 4))
 
         self._total = ctk.CTkLabel(pie, text=moneda(0), anchor="e",
                                    font=ctk.CTkFont(size=e.TAM_CIFRA,
                                                     weight="bold"))
-        self._total.grid(row=1, column=2, sticky="e", padx=16, pady=(8, 0))
+        self._total.grid(row=2, column=2, sticky="e", padx=16, pady=(8, 0))
 
-        # Fila 2: resumen (o el error del descuento, en rojo)
+        # Fila 3: resumen (o el error del descuento, en rojo)
         self._resumen = ctk.CTkLabel(pie, text="", anchor="w",
                                      text_color=e.COLOR_TEXTO_SUAVE)
-        self._resumen.grid(row=2, column=0, columnspan=3, sticky="w",
+        self._resumen.grid(row=3, column=0, columnspan=3, sticky="w",
                            padx=16, pady=(0, 4))
 
-        # Fila 3: botones
+        # Fila 4: botones
         acciones = ctk.CTkFrame(pie, fg_color="transparent")
-        acciones.grid(row=3, column=0, columnspan=3, sticky="ew", padx=16,
+        acciones.grid(row=4, column=0, columnspan=3, sticky="ew", padx=16,
                       pady=(4, 14))
         self._boton_quitar = boton(acciones, "Quitar línea",
                                    self._quitar_linea, "secundario", ancho=110)
@@ -707,6 +728,50 @@ class PantallaVentas(ctk.CTkFrame):
         self._dibujar_lineas()
         self._mostrar_elegido()
 
+    # ------------------------------------------------------------------ envío
+    def _mostrar_envio(self):
+        if self._envio is None:
+            self._texto_envio.configure(text="Sin envío",
+                                        text_color=e.COLOR_TEXTO_SUAVE)
+            self._boton_envio.configure(text="Envío")
+            self._boton_sin_envio.pack_forget()
+        else:
+            self._texto_envio.configure(
+                text=f"{self._envio['servicio']} · {self._envio['nombre']}",
+                text_color=e.COLOR_PRIMARIO)
+            self._boton_envio.configure(text="Editar envío")
+            self._boton_sin_envio.pack(side="right", padx=(0, 8),
+                                       before=self._boton_envio)
+
+    def _elegir_envio(self):
+        """Pide los datos del envío. Se guarda al cobrar la venta."""
+        dialogo = DialogoEnvio(self, self._envio, cliente=self._cliente,
+                               con_venta=False)
+        self.wait_window(dialogo)
+        if dialogo.resultado:
+            self._envio = dialogo.resultado
+            self._mostrar_envio()
+            self.alerta.mostrar("Envío anotado. Se registra al cobrar la venta.",
+                                "ok", segundos=4)
+
+    def _quitar_envio(self):
+        self._envio = None
+        self._mostrar_envio()
+
+    def _guardar_envio(self, numero_venta):
+        """Registra el envío ligado a la venta recién cobrada.
+
+        Devuelve None si todo salió bien (o no había envío), o el motivo si no
+        se pudo guardar (la venta ya está guardada de todos modos).
+        """
+        if self._envio is None:
+            return None
+        try:
+            envios.crear(dict(self._envio, venta=numero_venta))
+        except ValueError as error:
+            return str(error)
+        return None
+
     # ------------------------------------------------------------------ cliente
     def _mostrar_cliente(self):
         if self._cliente is None:
@@ -742,9 +807,11 @@ class PantallaVentas(ctk.CTkFrame):
         """Deja la pantalla lista para la siguiente venta."""
         self._lineas.clear()
         self._cliente = None
+        self._envio = None
         self.f_descuento.limpiar()
         self._pago.set(ventas.FORMAS_PAGO[0])
         self._mostrar_cliente()
+        self._mostrar_envio()
         self._dibujar_lineas()
         self._limpiar_formulario()
 
@@ -770,7 +837,11 @@ class PantallaVentas(ctk.CTkFrame):
         resumen = [f"Total: {moneda(total)}"]
         if descuento:
             resumen.append(f"Descuento: {moneda(descuento)}")
-        resumen += [f"Forma de pago: {forma}", f"Cliente: {cliente}",
+        resumen += [f"Forma de pago: {forma}", f"Cliente: {cliente}"]
+        if self._envio:
+            resumen.append(f"Envío: {self._envio['servicio']} a "
+                           f"{self._envio['nombre']}")
+        resumen += [
                     f"{len(items)} {'producto' if len(items) == 1 else 'productos'}"
                     f" · {entero(unidades)} {'unidad' if unidades == 1 else 'unidades'}",
                     "", " "]
@@ -786,13 +857,20 @@ class PantallaVentas(ctk.CTkFrame):
             self.alerta.mostrar(str(error), "error")
             self.refrescar()           # el stock pudo haber cambiado
             return
+        con_envio = self._envio is not None
+        fallo_envio = self._guardar_envio(resultado["numero"])
         self._limpiar_venta()
         self._franja.refrescar()
         # Ya está guardada: un mensaje que se quita solo, sin botón que confunda.
-        self.alerta.mostrar(
-            f"Venta {resultado['numero']} registrada · Total "
-            f"{moneda(resultado['total'])} · {forma} · {resultado['cliente']}",
-            "ok", segundos=6)
+        mensaje = (f"Venta {resultado['numero']} registrada · Total "
+                   f"{moneda(resultado['total'])} · {forma} · {resultado['cliente']}")
+        if fallo_envio:
+            self.alerta.mostrar(
+                f"{mensaje}. PERO el envío no se guardó ({fallo_envio}) "
+                "Regístralo en la pestaña Envíos.", "aviso", segundos=12)
+        else:
+            self.alerta.mostrar(mensaje + (" · envío registrado" if con_envio
+                                           else ""), "ok", segundos=6)
         if resultado["stock_bajo"]:
             lineas = ["Stock bajo:"]
             for p in resultado["stock_bajo"]:
@@ -848,6 +926,8 @@ class PantallaVentas(ctk.CTkFrame):
             self.alerta.mostrar(str(error), "error")
             self.refrescar()           # el stock pudo haber cambiado
             return
+        con_envio = self._envio is not None
+        fallo_envio = self._guardar_envio(resultado["numero"])
         self._limpiar_venta()
         self.alerta.ocultar()
         credito = resultado["credito"]
@@ -860,6 +940,11 @@ class PantallaVentas(ctk.CTkFrame):
         for c in credito["cuotas"]:
             lineas.append(f"• {c['numero']}. {fecha_corta(c['vence'])}: "
                           f"{moneda(c['monto'])}")
+        if fallo_envio:
+            lineas += ["", f"OJO: el envío no se guardó ({fallo_envio}). "
+                       "Regístralo en la pestaña Envíos."]
+        elif con_envio:
+            lineas += ["", "Envío registrado en la pestaña Envíos."]
         if resultado["stock_bajo"]:
             lineas.append("")
             lineas.append("Stock bajo:")
@@ -880,7 +965,7 @@ class PantallaVentas(ctk.CTkFrame):
 
     def _estado_actual(self):
         return {"lineas": [dict(l) for l in self._lineas],
-                "cliente": self._cliente,
+                "cliente": self._cliente, "envio": self._envio,
                 "descuento": self.f_descuento.obtener(),
                 "pago": self._pago.get(),
                 "hora": datetime.now().strftime("%H:%M")}
@@ -888,9 +973,11 @@ class PantallaVentas(ctk.CTkFrame):
     def _cargar_estado(self, estado):
         self._lineas = [dict(l) for l in estado["lineas"]]
         self._cliente = estado["cliente"]
+        self._envio = estado.get("envio")
         self.f_descuento.poner(estado["descuento"])
         self._pago.set(estado["pago"])
         self._mostrar_cliente()
+        self._mostrar_envio()
         self._dibujar_lineas()
         self._limpiar_formulario()
 

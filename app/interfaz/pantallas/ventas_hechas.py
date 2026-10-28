@@ -1,7 +1,7 @@
 """Sección «Ventas hechas» (dentro de Caja y reportes).
 
 Lista las ventas (también las anuladas), muestra el detalle de la que se elige
-y permite anularla o devolver solo un producto. Anular devuelve el stock y el
+y permite anularla, devolver solo un producto o cambiarlo por otro. Anular devuelve el stock y el
 dinero cobrado; la venta no se borra: queda marcada como anulada con su motivo.
 Devolver un producto (o parte de sus unidades) deja la venta con el resto.
 """
@@ -12,9 +12,9 @@ import customtkinter as ctk
 from app.interfaz import estilos as e
 from app.interfaz.componentes import Alerta, Campo, CampoLista, Tabla, boton, confirmar
 from app.interfaz.dialogo_credito import fecha_corta
-from app.servicios import anulaciones
+from app.servicios import anulaciones, inventario
 from app.servicios.ventas import FORMAS_PAGO
-from app.utilidades.formato import moneda
+from app.utilidades.formato import entero, moneda
 
 PERIODOS = ["Hoy", "7 días", "Este mes", "Todas"]
 
@@ -24,6 +24,12 @@ COLUMNAS_VENTAS = [
     ("cliente", "Cliente", 120, "w", True),
     ("total", "Total", 90, "e"),
     ("estado", "Estado", 80, "w"),
+]
+COLUMNAS_NUEVO = [
+    ("codigo", "Código", 70, "w"),
+    ("nombre", "Producto", 150, "w", True),
+    ("stock", "Stock", 55, "e"),
+    ("precio", "Precio", 75, "e"),
 ]
 COLUMNAS_LINEAS = [
     ("producto", "Producto", 150, "w", True),
@@ -231,6 +237,169 @@ class _DialogoDevolver(ctk.CTkToplevel):
         self.focus_set()
 
 
+class _DialogoCambiar(ctk.CTkToplevel):
+    """Cambio: devuelve un producto y se lleva otro.
+
+    resultado = dict(unidades, nuevo_id, unidades_nuevas, precio, forma,
+    al_stock) o None si se canceló.
+    """
+
+    def __init__(self, padre, venta, linea):
+        super().__init__(padre)
+        self.resultado = None
+        self._venta, self._linea, self._nuevo = venta, linea, None
+        self.title("Cambiar producto")
+        self.resizable(False, False)
+        self.configure(fg_color=e.COLOR_FONDO)
+        cuerpo = ctk.CTkFrame(self)
+        cuerpo.pack(fill="both", expand=True, padx=e.MARGEN, pady=e.MARGEN)
+        ctk.CTkLabel(cuerpo, text=f"Cambiar «{linea['nombre']}»", anchor="w",
+                     font=ctk.CTkFont(size=e.TAM_SUBTITULO, weight="bold")
+                     ).pack(fill="x", padx=18, pady=(16, 2))
+        ctk.CTkLabel(cuerpo, text=f"Venta {venta['numero']}  ·  se vendieron "
+                     f"{linea['cantidad']:g} a {moneda(linea['precio_unitario'])}",
+                     anchor="w", text_color=e.COLOR_TEXTO_SUAVE
+                     ).pack(fill="x", padx=18, pady=(0, 10))
+        self.unidades = Campo(cuerpo, "Unidades que devuelve", ancho=440)
+        self.unidades.pack(fill="x", padx=18, pady=(0, 8))
+        self.unidades.poner(f"{linea['cantidad']:g}")
+        self.unidades.al_escribir(self._actualizar)
+
+        self.buscar = Campo(cuerpo, "Producto que se lleva (código o nombre)",
+                            ancho=440)
+        self.buscar.pack(fill="x", padx=18, pady=(0, 4))
+        self.buscar.al_escribir(self._buscar)
+        self.lista = Tabla(cuerpo, COLUMNAS_NUEVO, alto=4)
+        for hijo in self.lista.winfo_children():
+            if isinstance(hijo, ctk.CTkScrollbar):
+                hijo.configure(height=60)
+        self.lista.pack(fill="x", padx=18, pady=(0, 6))
+        self.lista.al_elegir(self._elegir_nuevo)
+        self.elegido = ctk.CTkLabel(cuerpo, text="Elige el producto de la lista.",
+                                    anchor="w", text_color=e.COLOR_TEXTO_SUAVE)
+        self.elegido.pack(fill="x", padx=18)
+
+        fila = ctk.CTkFrame(cuerpo, fg_color="transparent")
+        fila.pack(fill="x", padx=18, pady=(6, 8))
+        self.unidades_nuevas = Campo(fila, "Unidades que se lleva", ancho=140)
+        self.unidades_nuevas.pack(side="left")
+        self.unidades_nuevas.poner(f"{linea['cantidad']:g}")
+        self.unidades_nuevas.al_escribir(self._actualizar)
+        self.precio = Campo(fila, "Precio por unidad", ancho=140)
+        self.precio.pack(side="left", padx=(12, 0))
+        self.precio.al_escribir(self._actualizar)
+
+        self.resumen = ctk.CTkLabel(cuerpo, text="", anchor="w", justify="left",
+                                    wraplength=440, text_color=e.COLOR_TEXTO_SUAVE)
+        self.resumen.pack(fill="x", padx=18, pady=(0, 6))
+        self.forma = CampoLista(cuerpo, "Forma de pago de la diferencia",
+                                valores=FORMAS_PAGO, ancho=440)
+        self.forma.pack(fill="x", padx=18, pady=(0, 8))
+        usada = venta["por_forma"][0][0] if venta["por_forma"] else FORMAS_PAGO[0]
+        self.forma.poner(usada)
+        self.danado = ctk.CTkCheckBox(
+            cuerpo, text="No volver al stock lo que devuelve (dañado)")
+        self.danado.pack(anchor="w", padx=18, pady=(0, 6))
+        self.error = ctk.CTkLabel(cuerpo, text="", anchor="w",
+                                  text_color=e.COLOR_PELIGRO, wraplength=440,
+                                  justify="left")
+        self.error.pack(fill="x", padx=18)
+        pie = ctk.CTkFrame(cuerpo, fg_color="transparent")
+        pie.pack(fill="x", padx=18, pady=(6, 16))
+        boton(pie, "Cambiar", self._aceptar, tipo="principal",
+              ancho=130).pack(side="right", padx=(8, 0))
+        boton(pie, "Cancelar", self._cerrar, tipo="secundario",
+              ancho=110).pack(side="right")
+        self.protocol("WM_DELETE_WINDOW", self._cerrar)
+        self.bind("<Escape>", lambda _ev: self._cerrar())
+        self._buscar()
+        self._centrar(padre)
+        self.buscar.foco()
+
+    def _buscar(self):
+        propio = self._linea["producto_id"]
+        encontrados = [p for p in inventario.buscar_productos(self.buscar.obtener())
+                       if p.id != propio and p.stock > 0][:30]
+        self.lista.cargar([
+            (p.id, (p.codigo, p.nombre, entero(p.stock), moneda(p.precio_unidad)), "")
+            for p in encontrados])
+        self._productos = {p.id: p for p in encontrados}
+
+    def _elegir_nuevo(self, id_):
+        p = self._productos.get(int(id_))
+        if p is None:
+            return
+        self._nuevo = p
+        self.elegido.configure(
+            text=f"Se lleva: {p.nombre}  (hay {entero(p.stock)})",
+            text_color=e.COLOR_TEXTO)
+        self.precio.poner(f"{p.precio_unidad:g}")
+        self._actualizar()
+
+    def _calcular(self):
+        if self._nuevo is None:
+            raise ValueError("Elige el producto que se lleva.")
+        return anulaciones.vista_previa_cambio(
+            self._venta["id"], self._linea["id"], self.unidades.obtener(),
+            self._nuevo.id, self.unidades_nuevas.obtener(), self.precio.obtener())
+
+    def _actualizar(self):
+        try:
+            p = self._calcular()
+        except ValueError as error:
+            self.resumen.configure(text="")
+            self.error.configure(
+                text="" if self._nuevo is None else str(error))
+            return
+        self.error.configure(text="")
+        lineas = [f"• Devuelve {moneda(p['valor'])} y se lleva "
+                  f"{moneda(p['valor_nuevo'])}."]
+        if p["baja_deuda"] > 0:
+            lineas.append(f"• Baja su deuda en {moneda(p['baja_deuda'])}.")
+        if p["diferencia"] > 0:
+            lineas.append(f"• El cliente paga la diferencia: "
+                          f"{moneda(p['diferencia'])}.")
+        elif p["diferencia"] < 0:
+            lineas.append(f"• Se le devuelve la diferencia: "
+                          f"{moneda(-p['diferencia'])}.")
+        else:
+            lineas.append("• No hay diferencia de dinero.")
+        self.resumen.configure(text="\n".join(lineas))
+
+    def _aceptar(self):
+        try:
+            p = self._calcular()
+        except ValueError as error:
+            self.error.configure(text=str(error))
+            return
+        forma = self.forma.obtener()
+        if p["diferencia"] != 0 and forma not in FORMAS_PAGO:
+            self.error.configure(text="Elige la forma de pago de la diferencia.")
+            return
+        self.resultado = {
+            "unidades": self.unidades.obtener(), "nuevo_id": self._nuevo.id,
+            "unidades_nuevas": self.unidades_nuevas.obtener(),
+            "precio": self.precio.obtener(), "forma": forma,
+            "al_stock": not self.danado.get()}
+        self._cerrar()
+
+    def _cerrar(self):
+        self.grab_release()
+        self.destroy()
+
+    def _centrar(self, padre):
+        self.update_idletasks()
+        ancho, alto = self.winfo_reqwidth(), self.winfo_reqheight()
+        raiz = padre.winfo_toplevel()
+        x = raiz.winfo_rootx() + (raiz.winfo_width() - ancho) // 2
+        y = raiz.winfo_rooty() + (raiz.winfo_height() - alto) // 2
+        self.geometry(f"{ancho}x{alto}+{max(x, 0)}+{max(y, 0)}")
+        self.transient(raiz)
+        self.wait_visibility()
+        self.grab_set()
+        self.focus_set()
+
+
 class PantallaVentasHechas(ctk.CTkFrame):
     def __init__(self, padre):
         super().__init__(padre, fg_color="transparent")
@@ -288,11 +457,15 @@ class PantallaVentasHechas(ctk.CTkFrame):
         pie = ctk.CTkFrame(d, fg_color="transparent")
         pie.pack(side="bottom", fill="x", padx=14, pady=14)
         self.b_anular = boton(pie, "Anular venta", self._anular, tipo="peligro",
-                              ancho=150)
+                              ancho=125)
         self.b_anular.pack(side="right")
-        self.b_devolver = boton(pie, "Devolver producto", self._devolver,
-                                tipo="secundario", ancho=160)
+        self.b_cambiar = boton(pie, "Cambiar", self._cambiar,
+                               tipo="secundario", ancho=100)
+        self.b_cambiar.pack(side="right", padx=(0, 8))
+        self.b_devolver = boton(pie, "Devolver", self._devolver,
+                                tipo="secundario", ancho=100)
         self.b_devolver.pack(side="right", padx=(0, 8))
+        self.b_cambiar.configure(state="disabled")
         self.b_anular.configure(state="disabled")
         self.b_devolver.configure(state="disabled")
         self._ayuda = ctk.CTkLabel(
@@ -320,9 +493,11 @@ class PantallaVentasHechas(ctk.CTkFrame):
         else:
             texto = "Sin pagos registrados."
         if v["devoluciones"]:
-            texto += "\n\nDevoluciones:\n" + "\n".join(
+            texto += "\n\nDevoluciones y cambios:\n" + "\n".join(
                 f"{fecha_corta(x['fecha'])}  {x['cantidad']:g} × {x['nombre']}"
-                f" ({moneda(x['valor'])})" for x in v["devoluciones"])
+                + (f" → cambio por {x['cantidad_nueva']:g} × {x['nombre_nuevo']}"
+                   if x["nombre_nuevo"] else f" ({moneda(x['valor'])})")
+                for x in v["devoluciones"])
         if v["estado"] == "activa" and v["debe"] > 0:
             texto += f"\n\nTodavía debe: {moneda(v['debe'])}"
         self._pagos.configure(text=texto)
@@ -338,13 +513,15 @@ class PantallaVentasHechas(ctk.CTkFrame):
         activa = v["estado"] == "activa"
         self.b_anular.configure(state="normal" if activa else "disabled")
         self.b_devolver.configure(state="disabled")
+        self.b_cambiar.configure(state="disabled")
         self._ayuda.configure(
-            text="Para devolver solo un producto, elígelo en la lista de arriba."
+            text="Para devolver o cambiar solo un producto, elígelo en la lista de arriba."
             if activa else "")
 
     def _elegir_linea(self, _id):
         if self._venta and self._venta["estado"] == "activa":
             self.b_devolver.configure(state="normal")
+            self.b_cambiar.configure(state="normal")
             self._ayuda.configure(text="")
 
     def _limpiar_detalle(self):
@@ -355,6 +532,7 @@ class PantallaVentasHechas(ctk.CTkFrame):
         self.t_lineas.vaciar()
         self.b_anular.configure(state="disabled")
         self.b_devolver.configure(state="disabled")
+        self.b_cambiar.configure(state="disabled")
         self._ayuda.configure(text="")
 
     # ------------------------------------------------------------ acciones
@@ -416,6 +594,36 @@ class PantallaVentasHechas(ctk.CTkFrame):
             msg += f" La deuda bajó {moneda(r['baja_deuda'])}."
         if r["dinero"] > 0:
             msg += f" Devuelve {moneda(r['dinero'])} al cliente."
+        self.alerta.mostrar(msg, "ok", 8)
+        self.refrescar()
+        self._elegir(v["id"])
+
+    def _cambiar(self):
+        v, id_linea = self._venta, self.t_lineas.seleccionado()
+        if not v or id_linea is None or v["estado"] != "activa":
+            return
+        linea = next((l for l in v["lineas"] if str(l["id"]) == str(id_linea)), None)
+        if linea is None:
+            return
+        dialogo = _DialogoCambiar(self, v, linea)
+        self.wait_window(dialogo)
+        d = dialogo.resultado
+        if not d:
+            return
+        try:
+            r = anulaciones.cambiar_producto(
+                v["id"], linea["id"], d["unidades"], d["nuevo_id"],
+                d["unidades_nuevas"], d["precio"], forma_pago=d["forma"],
+                volver_al_stock=d["al_stock"])
+        except ValueError as error:
+            self.alerta.mostrar(str(error), "error", 6)
+            return
+        msg = (f"Cambio registrado: {r['cantidad']:g} × {r['devuelto']} por "
+               f"{r['cantidad_nueva']:g} × {r['nuevo']}.")
+        if r["diferencia"] > 0:
+            msg += f" El cliente pagó {moneda(r['diferencia'])} de diferencia."
+        elif r["diferencia"] < 0:
+            msg += f" Se le devolvió {moneda(-r['diferencia'])}."
         self.alerta.mostrar(msg, "ok", 8)
         self.refrescar()
         self._elegir(v["id"])
