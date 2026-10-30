@@ -62,7 +62,7 @@ class VentanaPrincipal(ctk.CTk):
         e.configurar_tabla()
         self.title(f"{config.NOMBRE_TIENDA} - Inventario y ventas")
         self.geometry("1240x760")
-        self.minsize(1280, 680)
+        self.minsize(1180, 680)
 
         self._botones = {}
         self._pantallas = {}
@@ -79,24 +79,24 @@ class VentanaPrincipal(ctk.CTk):
 
     # ------------------------------------------------------------- encabezado
     def _crear_encabezado(self):
-        barra = ctk.CTkFrame(self, corner_radius=0, fg_color=e.COLOR_TARJETA,
+        barra = ctk.CTkFrame(self, corner_radius=0, fg_color=e.COLOR_PRIMARIO,
                              border_width=0)
         barra.pack(fill="x")
-        ctk.CTkLabel(barra, text=config.NOMBRE_TIENDA, text_color=e.COLOR_PRIMARIO,
+        ctk.CTkLabel(barra, text=config.NOMBRE_TIENDA, text_color="#FFFFFF",
                      font=ctk.CTkFont(size=e.TAM_TITULO, weight="bold")
                      ).pack(side="left", padx=(e.MARGEN + 4, 28), pady=12)
         for nombre, *_ in PESTANAS:
             boton = ctk.CTkButton(
                 barra, text=nombre, width=0, height=e.ALTO_CONTROL,
-                fg_color="transparent", hover_color=e.COLOR_PESTANA_HOVER,
-                text_color=e.COLOR_TEXTO_SUAVE,
+                fg_color="transparent", hover_color=e.COLOR_PRIMARIO_HOVER,
+                text_color="#E9D5F0",
                 font=ctk.CTkFont(weight="bold"),
                 command=lambda n=nombre: self.mostrar(n))
             boton.pack(side="left", padx=3, pady=12)
             self._botones[nombre] = boton
         hoy = date.today()
         ctk.CTkLabel(barra, text=f"{hoy.day} de {_MESES[hoy.month - 1]} de {hoy.year}",
-                     text_color=e.COLOR_TEXTO_SUAVE
+                     text_color="#E9D5F0"
                      ).pack(side="right", padx=e.MARGEN + 4)
         # línea fina bajo la barra
         ctk.CTkFrame(self, height=1, corner_radius=0,
@@ -114,8 +114,8 @@ class VentanaPrincipal(ctk.CTk):
         for n, boton in self._botones.items():
             activa = (n == nombre)
             boton.configure(
-                fg_color=e.COLOR_PRIMARIO_SUAVE if activa else "transparent",
-                text_color=e.COLOR_PRIMARIO if activa else e.COLOR_TEXTO_SUAVE)
+                fg_color="#FFFFFF" if activa else "transparent",
+                text_color=e.COLOR_PRIMARIO if activa else "#E9D5F0")
         # Si la pantalla sabe refrescarse (p. ej. el stock cambió), lo hace.
         refrescar = getattr(self._pantallas[nombre], "refrescar", None)
         if callable(refrescar):

@@ -15,20 +15,20 @@ TAM_PEQUENO = 12
 TAM_CIFRA = 24
 
 # ------------------------------------------------------------------ colores
-# Base: tela vaquera (denim) sobre fondo claro tipo tiza.
+# Base: morado de La Feria sobre fondo claro tipo tiza.
 COLOR_FONDO = "#F4F5F7"          # fondo de ventanas
 COLOR_TARJETA = "#FFFFFF"        # tarjetas, formularios, tablas
 COLOR_BORDE = "#D9DDE3"          # bordes finos
 COLOR_TEXTO = "#1B2430"
 COLOR_TEXTO_SUAVE = "#5B6675"
 
-COLOR_PRIMARIO = "#2B4C8C"       # denim 2v4c8c
-COLOR_PRIMARIO_HOVER = "#223D72"
-COLOR_PRIMARIO_SUAVE = "#E3EAF6"  # fila seleccionada, pestaña activa
+COLOR_PRIMARIO = "#6A0080"       # morado
+COLOR_PRIMARIO_HOVER = "#550066"
+COLOR_PRIMARIO_SUAVE = "#F3E5F7"  # fila seleccionada, pestaña activa
 
-COLOR_OK = "#1F7A4D"
-COLOR_OK_HOVER = "#18633E"
-COLOR_OK_FONDO = "#E1F3EA"
+COLOR_OK = "#198754"
+COLOR_OK_HOVER = "#146C43"
+COLOR_OK_FONDO = "#E3F4EA"
 
 COLOR_AVISO = "#B45309"          # stock bajo
 COLOR_AVISO_FONDO = "#FEF3C7"
@@ -37,10 +37,9 @@ COLOR_PELIGRO = "#B42318"        # agotado, errores, anular
 COLOR_PELIGRO_HOVER = "#912018"
 COLOR_PELIGRO_FONDO = "#FDE8E6"
 
-COLOR_NEUTRO = "#E6E9EE"         # botón secundario
-COLOR_NEUTRO_HOVER = "#D5DAE1"
-COLOR_PESTANA = "#E6E9EE"
-COLOR_PESTANA_HOVER = "#D5DAE1"
+COLOR_NEUTRO = "#E5E7EB"         # botón secundario
+COLOR_NEUTRO_HOVER = "#D1D5DB"
+COLOR_PESTANA_HOVER = "#E8D3EE"   # al pasar el mouse por una pestaña
 
 # ------------------------------------------------------------------ medidas
 RADIO = 8            # esquinas de botones, campos y tarjetas
@@ -103,12 +102,3 @@ def configurar_tabla():
                      font=(FUENTE, 11), background=COLOR_TARJETA,
                      fieldbackground=COLOR_TARJETA, foreground=COLOR_TEXTO,
                      borderwidth=0, relief="flat")
-    estilo.configure("Feria.Treeview.Heading", font=(FUENTE, 11, "bold"),
-                     background=COLOR_NEUTRO, foreground=COLOR_TEXTO,
-                     relief="flat", padding=(8, 6))
-    estilo.map("Feria.Treeview",
-               background=[("selected", COLOR_PRIMARIO_SUAVE)],
-               foreground=[("selected", COLOR_TEXTO)])
-    estilo.map("Feria.Treeview.Heading",
-               background=[("active", COLOR_NEUTRO_HOVER)])
-    estilo.layout("Feria.Treeview", [("Treeview.treearea", {"sticky": "nswe"})])

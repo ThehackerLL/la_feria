@@ -63,7 +63,7 @@ def _validar(con, datos):
         raise ValueError("Escribe el nombre de quien recibe.")
     servicio = datos.get("servicio")
     if servicio not in SERVICIOS:
-        raise ValueError("Elige el servicio: Olva, Shalom o Domicilio.")
+        raise ValueError("Elige el servicio: Olva, Shalom, Otro o Domicilio.")
     destino = _texto(datos.get("destino"))
     if not destino:
         raise ValueError("Escribe el destino (ciudad y agencia, o la dirección).")
