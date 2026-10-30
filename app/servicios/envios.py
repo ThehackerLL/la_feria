@@ -11,7 +11,7 @@ from datetime import datetime
 from app.servicios import clientes
 from app.servicios.inventario import _usar, normalizar
 
-SERVICIOS = ("Olva", "Shalom", "Domicilio")
+SERVICIOS = ("Olva", "Shalom", "Otro", "Domicilio")
 
 _TABLA = """
 CREATE TABLE IF NOT EXISTS envios (
