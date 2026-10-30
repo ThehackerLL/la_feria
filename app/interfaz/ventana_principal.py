@@ -7,7 +7,7 @@ import customtkinter as ctk
 from app import config
 from app.interfaz import estilos as e
 from app.interfaz.componentes import _Dialogo, aviso, confirmar
-from app.servicios import creditos, respaldos
+from app.servicios import creditos, respaldos, seguridad
 from app.utilidades.formato import moneda
 
 # (nombre en la pestaña, módulo, clase, etapa en que se construye)
@@ -67,6 +67,7 @@ class VentanaPrincipal(ctk.CTk):
         self._botones = {}
         self._pantallas = {}
         self._activa = None
+        self.cerro_sesion = False      # True: vuelve a la pantalla de ingreso
 
         self._crear_encabezado()
         self._zona = ctk.CTkFrame(self, fg_color="transparent")
@@ -95,9 +96,19 @@ class VentanaPrincipal(ctk.CTk):
             boton.pack(side="left", padx=3, pady=12)
             self._botones[nombre] = boton
         hoy = date.today()
+        ctk.CTkButton(
+            barra, text="Cerrar sesión", width=0, height=e.ALTO_CONTROL,
+            fg_color=e.COLOR_NEUTRO, hover_color=e.COLOR_NEUTRO_HOVER,
+            text_color=e.COLOR_TEXTO, font=ctk.CTkFont(weight="bold"),
+            command=lambda: self._cerrar(cerrar_sesion=True)
+        ).pack(side="right", padx=(0, e.MARGEN + 4))
+        ctk.CTkLabel(barra, text=f"Usuario: {seguridad.nombre_usuario()}",
+                     text_color=e.COLOR_PRIMARIO,
+                     font=ctk.CTkFont(weight="bold")
+                     ).pack(side="right", padx=(0, 16))
         ctk.CTkLabel(barra, text=f"{hoy.day} de {_MESES[hoy.month - 1]} de {hoy.year}",
                      text_color=e.COLOR_TEXTO_SUAVE
-                     ).pack(side="right", padx=e.MARGEN + 4)
+                     ).pack(side="right", padx=(0, 16))
         # línea fina bajo la barra
         ctk.CTkFrame(self, height=1, corner_radius=0,
                      fg_color=e.COLOR_BORDE).pack(fill="x")
@@ -158,17 +169,21 @@ class VentanaPrincipal(ctk.CTk):
             self.mostrar("Crédito")
 
     # ----------------------------------------------------------------- cerrar
-    def _cerrar(self):
-        """Cierra el programa; si hay una venta sin terminar, avisa antes."""
+    def _cerrar(self, cerrar_sesion=False):
+        """Cierra el programa (o solo la sesión, para entrar con otro usuario);
+        si hay una venta sin terminar, avisa antes."""
         ventas = self._pantallas.get("Ventas")
         hay_pendientes = getattr(ventas, "tiene_pendientes", None)
         if callable(hay_pendientes) and hay_pendientes():
             if not confirmar(
                     self, "Hay una venta sin terminar",
                     "Hay una venta sin cobrar o ventas en espera. Si cierras "
-                    "ahora se perderán.", texto_si="Cerrar", peligro=True):
+                    "ahora se perderán.",
+                    texto_si="Cerrar sesión" if cerrar_sesion else "Cerrar",
+                    peligro=True):
                 return
         self._respaldar_al_cerrar()
+        self.cerro_sesion = cerrar_sesion
         self.destroy()
 
     def _respaldar_al_cerrar(self):
