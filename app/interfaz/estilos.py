@@ -39,7 +39,10 @@ COLOR_PELIGRO_FONDO = "#FDE8E6"
 
 COLOR_NEUTRO = "#E5E7EB"         # botón secundario
 COLOR_NEUTRO_HOVER = "#D1D5DB"
-COLOR_PESTANA_HOVER = "#E8D3EE"   # al pasar el mouse por una pestaña
+
+COLOR_ENCABEZADO = "#E9D5F0"        # encabezados de las tablas (lila)
+COLOR_ENCABEZADO_HOVER = "#DCC0E8"
+COLOR_ENCABEZADO_TEXTO = "#4A0059"
 
 # ------------------------------------------------------------------ medidas
 RADIO = 8            # esquinas de botones, campos y tarjetas
@@ -102,3 +105,13 @@ def configurar_tabla():
                      font=(FUENTE, 11), background=COLOR_TARJETA,
                      fieldbackground=COLOR_TARJETA, foreground=COLOR_TEXTO,
                      borderwidth=0, relief="flat")
+    # Encabezados: se mantienen las líneas y bordes del estilo base de "clam";
+    # solo cambia el color.
+    estilo.configure("Feria.Treeview.Heading",
+                     background=COLOR_ENCABEZADO,
+                     foreground=COLOR_ENCABEZADO_TEXTO)
+    estilo.map("Feria.Treeview.Heading",
+               background=[("active", COLOR_ENCABEZADO_HOVER)])
+    estilo.map("Feria.Treeview",
+               background=[("selected", COLOR_PRIMARIO_SUAVE)],
+               foreground=[("selected", COLOR_TEXTO)])

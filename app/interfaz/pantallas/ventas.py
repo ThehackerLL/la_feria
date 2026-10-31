@@ -12,6 +12,8 @@ producto y F9 cobra.
 """
 from datetime import datetime
 
+import tkinter as tk
+
 import customtkinter as ctk
 
 from app.interfaz import estilos as e
@@ -527,75 +529,110 @@ class PantallaVentas(ctk.CTkFrame):
 
         pie = ctk.CTkFrame(derecha, border_width=1, border_color=e.COLOR_BORDE)
         pie.pack(fill="x", pady=(e.ESPACIO, 0))
-        pie.grid_columnconfigure(2, weight=1)
+        pie.grid_columnconfigure(0, weight=1)
+        pequeno = ctk.CTkFont(size=e.TAM_PEQUENO)
+        negrita = ctk.CTkFont(weight="bold")
 
-        # Fila 0: cliente
-        fila_cliente = ctk.CTkFrame(pie, fg_color="transparent")
-        fila_cliente.grid(row=0, column=0, columnspan=3, sticky="ew",
-                          padx=16, pady=(12, 4))
-        ctk.CTkLabel(fila_cliente, text="Cliente:",
-                     text_color=e.COLOR_TEXTO_SUAVE).pack(side="left")
-        self._nombre_cliente = ctk.CTkLabel(fila_cliente, text="",
-                                            font=ctk.CTkFont(weight="bold"))
-        self._nombre_cliente.pack(side="left", padx=(8, 0))
-        self._boton_cliente = boton(fila_cliente, "Elegir o crear cliente",
+        # Columna 1: cliente y envío (cada uno con su botón a la derecha)
+        izquierda = ctk.CTkFrame(pie, fg_color="transparent")
+        izquierda.grid(row=0, column=0, sticky="nsew", padx=16, pady=14)
+
+        fila_cliente = ctk.CTkFrame(izquierda, fg_color="transparent")
+        fila_cliente.pack(fill="x")
+        self._boton_cliente = boton(fila_cliente, "Cambiar",
                                     self._elegir_cliente, "secundario",
-                                    ancho=190)
+                                    ancho=88)
         self._boton_cliente.pack(side="right")
-        self._boton_sin_cliente = boton(fila_cliente, "Quitar",
+        self._boton_sin_cliente = boton(fila_cliente, "×",
                                         self._quitar_cliente, "secundario",
-                                        ancho=80)
+                                        ancho=32)
+        texto_cliente = ctk.CTkFrame(fila_cliente, fg_color="transparent")
+        texto_cliente.pack(side="left")
+        self._marco_cliente = texto_cliente
+        ctk.CTkLabel(texto_cliente, text="Cliente:", anchor="w",
+                     text_color=e.COLOR_TEXTO_SUAVE, font=pequeno
+                     ).pack(anchor="w")
+        self._nombre_cliente = ctk.CTkLabel(texto_cliente, text="",
+                                            anchor="w", font=negrita)
+        self._nombre_cliente.pack(anchor="w")
 
-        # Fila 1: envío (opcional)
-        fila_envio = ctk.CTkFrame(pie, fg_color="transparent")
-        fila_envio.grid(row=1, column=0, columnspan=3, sticky="ew",
-                        padx=16, pady=(0, 4))
-        ctk.CTkLabel(fila_envio, text="Envío:",
-                     text_color=e.COLOR_TEXTO_SUAVE).pack(side="left")
-        self._texto_envio = ctk.CTkLabel(fila_envio, text="",
-                                         font=ctk.CTkFont(weight="bold"))
-        self._texto_envio.pack(side="left", padx=(8, 0))
-        self._boton_envio = boton(fila_envio, "Envío", self._elegir_envio,
-                                  "secundario", ancho=190)
+        fila_envio = ctk.CTkFrame(izquierda, fg_color="transparent")
+        fila_envio.pack(fill="x", pady=(10, 0))
+        self._boton_envio = boton(fila_envio, "Enviar A", self._elegir_envio,
+                                  "secundario", ancho=88)
         self._boton_envio.pack(side="right")
-        self._boton_sin_envio = boton(fila_envio, "Quitar",
+        self._boton_sin_envio = boton(fila_envio, "×",
                                       self._quitar_envio, "secundario",
-                                      ancho=80)
+                                      ancho=32)
+        texto_envio = ctk.CTkFrame(fila_envio, fg_color="transparent")
+        texto_envio.pack(side="left")
+        self._marco_envio = texto_envio
+        ctk.CTkLabel(texto_envio, text="Envío:", anchor="w",
+                     text_color=e.COLOR_TEXTO_SUAVE, font=pequeno
+                     ).pack(anchor="w")
+        self._texto_envio = ctk.CTkLabel(texto_envio, text="", anchor="w",
+                                         font=negrita)
+        self._texto_envio.pack(anchor="w")
 
-        # Fila 2: descuento, forma de pago y total
-        self.f_descuento = Campo(pie, "Descuento en soles (opcional)",
-                                 ancho=170, ayuda="0.00")
-        self.f_descuento.grid(row=2, column=0, sticky="w", padx=(16, 8),
-                              pady=(8, 4))
+        # Columna 2: descuento
+        self._separador_vertical(pie, 1)
+        self.f_descuento = Campo(pie, "Descuento (S/)", ancho=100,
+                                 ayuda="0.00")
+        self.f_descuento.grid(row=0, column=2, sticky="nw", padx=12,
+                              pady=14)
         self.f_descuento.al_escribir(self._recalcular)
 
-        ctk.CTkLabel(pie, text="Forma de pago", anchor="w",
-                     text_color=e.COLOR_TEXTO_SUAVE,
-                     font=ctk.CTkFont(size=e.TAM_PEQUENO)
-                     ).grid(row=2, column=1, sticky="nw", padx=(8, 8),
-                            pady=(8, 0))
+        # Columna 3: forma de pago
+        self._separador_vertical(pie, 3)
+        col_pago = ctk.CTkFrame(pie, fg_color="transparent")
+        col_pago.grid(row=0, column=4, sticky="nw", padx=12, pady=14)
+        ctk.CTkLabel(col_pago, text="Forma de pago", anchor="w",
+                     text_color=e.COLOR_TEXTO_SUAVE, font=pequeno
+                     ).pack(fill="x")
         self._pago = ctk.CTkOptionMenu(
-            pie, values=list(ventas.FORMAS_PAGO), width=170,
-            height=e.ALTO_CONTROL, font=ctk.CTkFont(weight="bold"),
+            col_pago, values=list(ventas.FORMAS_PAGO), width=124,
+            height=e.ALTO_CONTROL, font=negrita,
             dropdown_font=ctk.CTkFont(size=e.TAM_TEXTO))
         self._pago.set(ventas.FORMAS_PAGO[0])
-        self._pago.grid(row=2, column=1, sticky="sw", padx=(8, 8), pady=(0, 4))
+        self._pago.pack(pady=(2, 0))
 
-        self._total = ctk.CTkLabel(pie, text=moneda(0), anchor="e",
-                                   font=ctk.CTkFont(size=e.TAM_CIFRA,
+        # Columna 4: subtotal, descuento y total
+        self._separador_vertical(pie, 5)
+        caja = ctk.CTkFrame(pie, fg_color=e.COLOR_FONDO, border_width=1,
+                            border_color=e.COLOR_BORDE)
+        caja.grid(row=0, column=6, sticky="ns", padx=(12, 16), pady=14)
+        caja.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(caja, text="Subtotal", text_color=e.COLOR_TEXTO_SUAVE
+                     ).grid(row=0, column=0, sticky="w", padx=(12, 10),
+                            pady=(10, 0))
+        self._lbl_subtotal = ctk.CTkLabel(caja, text=moneda(0), anchor="e")
+        self._lbl_subtotal.grid(row=0, column=1, sticky="e", padx=(0, 12),
+                                pady=(10, 0))
+        ctk.CTkLabel(caja, text="Descuento", text_color=e.COLOR_TEXTO_SUAVE
+                     ).grid(row=1, column=0, sticky="w", padx=(12, 10))
+        self._lbl_descuento = ctk.CTkLabel(caja, text=moneda(0), anchor="e")
+        self._lbl_descuento.grid(row=1, column=1, sticky="e", padx=(0, 12))
+        tk.Frame(caja, height=1, bg=e.COLOR_BORDE
+                 ).grid(row=2, column=0, columnspan=2, sticky="sew",
+                        padx=12, pady=(6, 4))
+        caja.grid_rowconfigure(2, weight=1)
+        ctk.CTkLabel(caja, text="TOTAL", text_color=e.COLOR_PRIMARIO,
+                     font=ctk.CTkFont(size=e.TAM_SUBTITULO, weight="bold")
+                     ).grid(row=3, column=0, sticky="w", padx=(12, 10),
+                            pady=(0, 10))
+        self._total = ctk.CTkLabel(caja, text=moneda(0), anchor="e",
+                                   text_color=e.COLOR_PRIMARIO,
+                                   font=ctk.CTkFont(size=e.TAM_SUBTITULO + 3,
                                                     weight="bold"))
-        self._total.grid(row=2, column=2, sticky="e", padx=16, pady=(8, 0))
+        self._total.grid(row=3, column=1, sticky="e", padx=(0, 12),
+                         pady=(0, 10))
 
-        # Fila 3: resumen (o el error del descuento, en rojo)
-        self._resumen = ctk.CTkLabel(pie, text="", anchor="w",
-                                     text_color=e.COLOR_TEXTO_SUAVE)
-        self._resumen.grid(row=3, column=0, columnspan=3, sticky="w",
-                           padx=16, pady=(0, 4))
-
-        # Fila 4: botones
+        # Línea fina y, debajo, los botones
+        tk.Frame(pie, height=1, bg=e.COLOR_BORDE
+                 ).grid(row=1, column=0, columnspan=7, sticky="ew")
         acciones = ctk.CTkFrame(pie, fg_color="transparent")
-        acciones.grid(row=4, column=0, columnspan=3, sticky="ew", padx=16,
-                      pady=(4, 14))
+        acciones.grid(row=2, column=0, columnspan=7, sticky="ew", padx=16,
+                      pady=14)
         self._boton_quitar = boton(acciones, "Quitar línea",
                                    self._quitar_linea, "secundario", ancho=110)
         self._boton_quitar.pack(side="left")
@@ -612,10 +649,26 @@ class PantallaVentas(ctk.CTkFrame):
         self._boton_poner = boton(acciones, "Poner en espera",
                                   self._poner_en_espera, "secundario",
                                   ancho=150)
+        self._boton_poner.configure(height=44)
         self._boton_poner.pack(side="right", padx=(0, 8))
         self._boton_espera = boton(acciones, "", self._abrir_espera,
                                    "principal", ancho=130)
+        self._boton_espera.configure(height=44)
+        # Resumen corto (o el error del descuento, en rojo). Va al final para
+        # que, si falta espacio, se recorte él y no los botones.
+        self._resumen = ctk.CTkLabel(acciones, text="", anchor="w",
+                                     text_color=e.COLOR_TEXTO_SUAVE)
+        self._resumen.pack(side="left", padx=16)
 
+    @staticmethod
+    def _corto(texto, largo=20):
+        """Recorta un texto largo para que no empuje los botones."""
+        return texto if len(texto) <= largo else texto[:largo - 1] + "…"
+
+    @staticmethod
+    def _separador_vertical(pie, columna):
+        tk.Frame(pie, width=1, bg=e.COLOR_BORDE
+                 ).grid(row=0, column=columna, sticky="ns", pady=14)
 
     def _dibujar_lineas(self):
         self.tabla.cargar([
@@ -643,14 +696,14 @@ class PantallaVentas(ctk.CTkFrame):
         except ValueError as problema:
             error = str(problema)
             descuento, total = 0, subtotal
+        self._lbl_subtotal.configure(text=moneda(subtotal))
+        self._lbl_descuento.configure(text=moneda(descuento))
         self._total.configure(text=moneda(total))
         if error:
             self._resumen.configure(text=error, text_color=e.COLOR_PELIGRO)
             return
         if self._lineas:
-            extra = f" · descuento {moneda(descuento)}" if descuento else ""
-            texto = (f"{len(self._lineas)} productos · {entero(unidades)} "
-                     f"unidades · subtotal {moneda(subtotal)}{extra}")
+            texto = f"{len(self._lineas)} productos · {entero(unidades)} unidades"
         else:
             texto = "Todavía no agregaste productos"
         self._resumen.configure(text=texto, text_color=e.COLOR_TEXTO_SUAVE)
@@ -733,15 +786,16 @@ class PantallaVentas(ctk.CTkFrame):
         if self._envio is None:
             self._texto_envio.configure(text="Sin envío",
                                         text_color=e.COLOR_TEXTO_SUAVE)
-            self._boton_envio.configure(text="Envío")
+            self._boton_envio.configure(text="Enviar A")
             self._boton_sin_envio.pack_forget()
         else:
             self._texto_envio.configure(
-                text=f"{self._envio['servicio']} · {self._envio['nombre']}",
+                text=self._corto(f"{self._envio['servicio']} · "
+                                 f"{self._envio['nombre']}"),
                 text_color=e.COLOR_PRIMARIO)
-            self._boton_envio.configure(text="Editar envío")
+            self._boton_envio.configure(text="Editar")
             self._boton_sin_envio.pack(side="right", padx=(0, 8),
-                                       before=self._boton_envio)
+                                       before=self._marco_envio)
 
     def _elegir_envio(self):
         """Pide los datos del envío. Se guarda al cobrar la venta."""
@@ -780,10 +834,10 @@ class PantallaVentas(ctk.CTkFrame):
             self._boton_sin_cliente.pack_forget()
         else:
             self._nombre_cliente.configure(
-                text=f"{self._cliente.nombre} · {self._cliente.telefono}",
+                text=self._corto(self._cliente.nombre),
                 text_color=e.COLOR_PRIMARIO)
             self._boton_sin_cliente.pack(side="right", padx=(0, 8),
-                                         before=self._boton_cliente)
+                                         before=self._marco_cliente)
 
     def _elegir_cliente(self):
         cliente = elegir_cliente(self)

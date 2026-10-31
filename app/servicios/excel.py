@@ -17,7 +17,7 @@ from app import config
 from app.servicios import caja, reportes, respaldos
 
 FUENTE = "Arial"
-AZUL, GRIS = "2B4C8C", "E6E9EE"
+MORADO, GRIS = "6A0080", "E5E7EB"
 DINERO = '"S/" #,##0.00'
 _MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio",
           "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
@@ -32,7 +32,7 @@ def _dmy(texto):
 
 def _titulo(ws, texto, sub=""):
     ws["A1"] = texto
-    ws["A1"].font = Font(name=FUENTE, size=14, bold=True, color=AZUL)
+    ws["A1"].font = Font(name=FUENTE, size=14, bold=True, color=MORADO)
     if sub:
         ws["A2"] = sub
         ws["A2"].font = Font(name=FUENTE, size=10, color="5B6675")
@@ -44,7 +44,7 @@ def _tabla(ws, fila, encabezados, filas, formatos=(), anchos=()):
     for j, texto in enumerate(encabezados, 1):
         c = ws.cell(row=fila, column=j, value=texto)
         c.font = Font(name=FUENTE, size=10, bold=True, color="FFFFFF")
-        c.fill = PatternFill("solid", fgColor=AZUL)
+        c.fill = PatternFill("solid", fgColor=MORADO)
         c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     for i, valores in enumerate(filas, fila + 1):
         for j, v in enumerate(valores, 1):

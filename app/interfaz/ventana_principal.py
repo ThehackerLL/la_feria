@@ -61,8 +61,8 @@ class VentanaPrincipal(ctk.CTk):
         super().__init__()
         e.configurar_tabla()
         self.title(f"{config.NOMBRE_TIENDA} - Inventario y ventas")
-        self.geometry("1240x760")
-        self.minsize(1180, 680)
+        self.geometry("1280x760")
+        self.minsize(1280, 680)
 
         self._botones = {}
         self._pantallas = {}
