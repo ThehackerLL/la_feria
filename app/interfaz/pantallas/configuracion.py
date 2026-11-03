@@ -1,11 +1,12 @@
-"""Pantalla Configuración: respaldos y carpeta de los Excel.
+"""Pantalla Configuración: usuarios y contraseñas, respaldos y carpeta de los Excel.
 
 El programa respalda solo (al abrir si pasó un día, y al cerrar si hubo
 cambios). Aquí se puede respaldar a mano, ver los respaldos guardados,
 elegir una carpeta para una copia extra (Google Drive, USB) y restaurar.
 También se elige la carpeta (p. ej. de Google Drive) donde se copia cada Excel
 de reportes, para verlo desde el celular.
-Más adelante aquí irán también la contraseña y los datos de la tienda.
+Usuarios y contraseñas: crear y quitar usuarios y cambiar contraseñas (casi todo
+pide la contraseña del dueño). Más adelante irán aquí los datos de la tienda.
 """
 import os
 from datetime import date, datetime
@@ -16,7 +17,8 @@ import customtkinter as ctk
 from app import config
 from app.interfaz import estilos as e
 from app.interfaz.componentes import Alerta, Tabla, aviso, boton, confirmar
-from app.servicios import respaldos
+from app.interfaz.dialogo_formulario import pedir_formulario
+from app.servicios import respaldos, seguridad
 
 COLUMNAS = [
     ("fecha", "Fecha y hora", 190, "w"),
@@ -49,10 +51,54 @@ class PantallaConfiguracion(ctk.CTkFrame):
         # Con scroll: en ventanas bajas todas las secciones siguen alcanzables.
         self._cuerpo = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self._cuerpo.pack(fill="both", expand=True)
+        self._crear_usuarios()
         self._crear_respaldos()
         self._crear_excel()
 
     # --------------------------------------------------------------- armado
+    def _crear_usuarios(self):
+        panel = ctk.CTkFrame(self._cuerpo, border_width=1,
+                             border_color=e.COLOR_BORDE)
+        panel.pack(fill="x", pady=(0, e.ESPACIO))
+        panel.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(panel, text="Usuarios y contraseñas", anchor="w",
+                     font=ctk.CTkFont(size=e.TAM_SUBTITULO, weight="bold")
+                     ).grid(row=0, column=0, columnspan=2, sticky="ew",
+                            padx=16, pady=(14, 2))
+        ctk.CTkLabel(panel, anchor="w", justify="left", wraplength=760,
+                     text_color=e.COLOR_TEXTO_SUAVE,
+                     text="Cada persona que vende entra con su usuario y su "
+                          "contraseña; su nombre queda anotado en lo que registra. "
+                          "La contraseña del dueño es otra y sirve para la "
+                          "ganancia, Inventario, Compras, Huella digital y el "
+                          "Excel. Crear o quitar usuarios también la pide."
+                     ).grid(row=1, column=0, columnspan=2, sticky="ew",
+                            padx=16, pady=(0, 8))
+        self._t_usuarios = Tabla(panel, [("nombre", "Usuario", 300, "w", True),
+                                         ("estado", "", 120, "w")], alto=4)
+        for hijo in self._t_usuarios.winfo_children():
+            if isinstance(hijo, ctk.CTkScrollbar):
+                hijo.configure(height=60)
+        self._t_usuarios.grid(row=2, column=0, columnspan=2, sticky="ew",
+                              padx=16, pady=(0, 8))
+        fila = ctk.CTkFrame(panel, fg_color="transparent")
+        fila.grid(row=3, column=0, columnspan=2, sticky="w", padx=16,
+                  pady=(0, 6))
+        boton(fila, "Nuevo usuario", self._nuevo_usuario, "principal",
+              ancho=140).pack(side="left", padx=(0, 8))
+        boton(fila, "Quitar usuario", self._quitar_usuario, "peligro",
+              ancho=140).pack(side="left", padx=(0, 8))
+        boton(fila, "Contraseña nueva para el usuario",
+              self._clave_a_usuario, "secundario",
+              ancho=230).pack(side="left")
+        fila2 = ctk.CTkFrame(panel, fg_color="transparent")
+        fila2.grid(row=4, column=0, columnspan=2, sticky="w", padx=16,
+                   pady=(0, 16))
+        boton(fila2, "Cambiar mi contraseña", self._cambiar_mi_clave,
+              "secundario", ancho=190).pack(side="left", padx=(0, 8))
+        boton(fila2, "Cambiar contraseña del dueño", self._cambiar_clave_dueno,
+              "secundario", ancho=230).pack(side="left")
+
     def _crear_respaldos(self):
         panel = ctk.CTkFrame(self._cuerpo, border_width=1,
                              border_color=e.COLOR_BORDE)
@@ -123,7 +169,7 @@ class PantallaConfiguracion(ctk.CTkFrame):
                           "en la carpeta que elijas (por ejemplo una de Google "
                           "Drive), sin dejar copia en esta PC, y así lo ves desde "
                           "el celular. Si Drive no está disponible, se guarda en "
-                          "la PC. Ojo: el Excel «con costos» lleva la ganancia; "
+                          "la PC. Ojo: el Excel lleva la ganancia de cada producto "
                           "elige una carpeta que solo vean personas de confianza."
                      ).grid(row=1, column=0, columnspan=3, sticky="ew",
                             padx=16, pady=(0, 8))
@@ -137,9 +183,108 @@ class PantallaConfiguracion(ctk.CTkFrame):
                                    "secundario", ancho=80)
         self._quitar_excel.grid(row=2, column=2, padx=(8, 16), pady=(0, 16))
 
+    # ------------------------------------------------------ usuarios y claves
+    def _cargar_usuarios(self):
+        yo = seguridad.nombre_usuario()
+        self._usuarios = seguridad.listar_usuarios()
+        self._t_usuarios.cargar([
+            (u["id"], (u["nombre"], "(tú)" if u["nombre"] == yo else ""), "")
+            for u in self._usuarios])
+
+    def _usuario_elegido(self):
+        elegido = self._t_usuarios.seleccionado()
+        if elegido is None:
+            self.alerta.mostrar("Primero elige un usuario de la lista.", "aviso")
+            return None
+        return next((u for u in self._usuarios if str(u["id"]) == str(elegido)),
+                    None)
+
+    @staticmethod
+    def _iguales(a, b):
+        if a != b:
+            raise ValueError("Las dos contraseñas nuevas no son iguales.")
+
+    def _nuevo_usuario(self):
+        def accion(v):
+            seguridad.comprobar_clave_dueno(v["dueno"])
+            self._iguales(v["clave"], v["repetir"])
+            self._nombre_creado = seguridad.formato_nombre(v["nombre"])
+            seguridad.crear_usuario(v["nombre"], v["clave"])
+        if pedir_formulario(
+                self, "Nuevo usuario",
+                [("nombre", "Nombre de la persona (ej.: Marta)", False),
+                 ("clave", "Contraseña del usuario", True),
+                 ("repetir", "Repite la contraseña", True),
+                 ("dueno", "Contraseña del dueño", True)],
+                "Crear usuario", accion,
+                texto="El usuario se llamará Analista-Nombre."):
+            self._cargar_usuarios()
+            self.alerta.mostrar(f"Usuario {self._nombre_creado} creado.", "ok")
+
+    def _quitar_usuario(self):
+        u = self._usuario_elegido()
+        if u is None:
+            return
+        def accion(v):
+            seguridad.comprobar_clave_dueno(v["dueno"])
+            seguridad.quitar_usuario(u["id"])
+        if pedir_formulario(
+                self, "Quitar usuario", [("dueno", "Contraseña del dueño", True)],
+                "Quitar", accion, peligro=True,
+                texto=f"Se quitará a {u['nombre']}. Lo que ya registró conserva "
+                      "su nombre."):
+            self._cargar_usuarios()
+            self.alerta.mostrar(f"Usuario {u['nombre']} quitado.", "ok")
+
+    def _clave_a_usuario(self):
+        u = self._usuario_elegido()
+        if u is None:
+            return
+        def accion(v):
+            seguridad.comprobar_clave_dueno(v["dueno"])
+            self._iguales(v["clave"], v["repetir"])
+            seguridad.poner_clave_usuario(u["id"], v["clave"])
+        if pedir_formulario(
+                self, "Contraseña nueva",
+                [("clave", f"Contraseña nueva para {u['nombre']}", True),
+                 ("repetir", "Repite la contraseña", True),
+                 ("dueno", "Contraseña del dueño", True)],
+                "Guardar", accion,
+                texto="Sirve cuando el usuario olvidó la suya."):
+            self.alerta.mostrar(f"Contraseña de {u['nombre']} cambiada.", "ok")
+
+    def _cambiar_mi_clave(self):
+        def accion(v):
+            self._iguales(v["clave"], v["repetir"])
+            seguridad.cambiar_clave_usuario(seguridad.nombre_usuario(),
+                                            v["actual"], v["clave"])
+        if pedir_formulario(
+                self, "Cambiar mi contraseña",
+                [("actual", "Contraseña actual", True),
+                 ("clave", "Contraseña nueva", True),
+                 ("repetir", "Repite la contraseña nueva", True)],
+                "Cambiar", accion,
+                texto=f"Usuario: {seguridad.nombre_usuario()}"):
+            self.alerta.mostrar("Tu contraseña se cambió.", "ok")
+
+    def _cambiar_clave_dueno(self):
+        def accion(v):
+            self._iguales(v["clave"], v["repetir"])
+            seguridad.cambiar_clave_dueno(v["actual"], v["clave"])
+        if pedir_formulario(
+                self, "Cambiar contraseña del dueño",
+                [("actual", "Contraseña actual del dueño", True),
+                 ("clave", "Contraseña nueva del dueño", True),
+                 ("repetir", "Repite la contraseña nueva", True)],
+                "Cambiar", accion,
+                texto="Esta es la que protege la ganancia, Inventario, Compras, "
+                      "Huella digital y el Excel."):
+            self.alerta.mostrar("La contraseña del dueño se cambió.", "ok")
+
     # ------------------------------------------------------------- mostrar
     def refrescar(self):
         """Se llama al abrir la pestaña."""
+        self._cargar_usuarios()
         self._lista = respaldos.listar()
         self._tabla.cargar([
             (i, (_fecha_texto(r["fecha"]).capitalize(),

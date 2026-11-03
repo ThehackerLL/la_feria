@@ -1,6 +1,6 @@
 """Lógica de ventas: validar lo que se vende, cómo se paga y guardar la venta."""
 from app.base_datos.conexion import transaccion
-from app.servicios import clientes, creditos, inventario
+from app.servicios import (clientes, creditos, huella, inventario, seguridad)
 
 FORMAS_PAGO = ("Efectivo", "Yape/Plin", "Transferencia", "Tarjeta")
 TIPOS_VENTA = ("unidad", "mayor")
@@ -157,6 +157,7 @@ def registrar_venta(items, pagos, cliente_id=None, descuento=0, credito=None):
             credito.get("dias", creditos.DIAS_DEFECTO))
 
     with transaccion() as con:
+        huella.preparar(con)                # antes de escribir nada
         cliente = None
         if cliente_id is not None:
             cliente = clientes.obtener_cliente(cliente_id, con=con)
@@ -182,10 +183,10 @@ def registrar_venta(items, pagos, cliente_id=None, descuento=0, credito=None):
             productos[producto_id] = producto
 
         venta_id = con.execute(
-            "INSERT INTO ventas (cliente_id, subtotal, descuento, total) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO ventas (cliente_id, subtotal, descuento, total, "
+            "vendedor) VALUES (?, ?, ?, ?, ?)",
             (cliente_id, totales["subtotal"], totales["descuento"],
-             totales["total"])).lastrowid
+             totales["total"], seguridad.nombre_usuario())).lastrowid
 
         utilidad = 0.0
         detalle = []
@@ -229,6 +230,16 @@ def registrar_venta(items, pagos, cliente_id=None, descuento=0, credito=None):
 
         fecha = con.execute("SELECT fecha FROM ventas WHERE id = ?",
                             (venta_id,)).fetchone()["fecha"]
+        huella.registrar(
+            con, venta_id, fecha,
+            cliente.nombre if cliente else clientes.PUBLICO_GENERAL,
+            seguridad.nombre_usuario(), huella.forma_de_pago(pagos, bool(plan)),
+            [{"producto_id": l["producto_id"],
+              "codigo": productos[l["producto_id"]].codigo,
+              "nombre": productos[l["producto_id"]].nombre,
+              "cantidad": l["cantidad"], "costo": productos[l["producto_id"]].costo,
+              "precio": l["precio"]} for l in lineas],
+            totales["descuento"])
 
     return {"venta_id": venta_id, "numero": numero_venta(venta_id),
             "fecha": fecha,

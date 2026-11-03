@@ -21,7 +21,8 @@ from app.interfaz.dialogo_cliente import elegir_cliente
 from app.interfaz.dialogo_credito import fecha_corta, plan_credito
 from app.interfaz.indicadores_dia import FranjaIndicadores
 from app.interfaz.pantallas.envios import DialogoEnvio
-from app.servicios import clientes, envios, inventario, paquetes, ventas
+from app.servicios import (clientes, envios, inventario, paquetes, seguridad,
+                           ventas)
 from app.utilidades.formato import entero, moneda
 from app.utilidades.validaciones import a_entero, a_numero
 
@@ -837,7 +838,8 @@ class PantallaVentas(ctk.CTkFrame):
         resumen = [f"Total: {moneda(total)}"]
         if descuento:
             resumen.append(f"Descuento: {moneda(descuento)}")
-        resumen += [f"Forma de pago: {forma}", f"Cliente: {cliente}"]
+        resumen += [f"Forma de pago: {forma}", f"Cliente: {cliente}",
+                    f"Vendedor: {seguridad.nombre_usuario() or '—'}"]
         if self._envio:
             resumen.append(f"Envío: {self._envio['servicio']} a "
                            f"{self._envio['nombre']}")

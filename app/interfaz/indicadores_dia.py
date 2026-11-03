@@ -3,13 +3,14 @@ Venta del día, Ganancia del día, Efectivo y Digital.
 
 Los números salen de servicios/caja.py, los mismos de «Caja del día», así que
 coinciden en todas las pantallas. Si la caja de hoy no se abrió, la tarjeta de
-Efectivo ofrece «Abrir caja». La ganancia sale oculta hasta pulsar «Mostrar».
+Efectivo ofrece «Abrir caja». La ganancia sale oculta; «Mostrar» pide la contraseña del dueño (60 s).
 """
 import customtkinter as ctk
 
 from app.interfaz import estilos as e
+from app.interfaz import clave_dueno
 from app.interfaz.componentes import Campo, boton
-from app.servicios import caja
+from app.servicios import caja, seguridad
 from app.utilidades.formato import moneda
 from app.utilidades.validaciones import a_numero
 
@@ -83,9 +84,11 @@ class _DialogoAbrirCaja(ctk.CTkToplevel):
 
 
 class FranjaIndicadores(ctk.CTkFrame):
-    # Compartido por todas las pantallas: si se muestra la ganancia en una,
-    # se ve igual en las demás hasta ocultarla o cerrar el programa.
-    ver_ganancia = False
+    # Se ve solo si el dueño puso su contraseña hace menos de 60 segundos
+    # (el estado se comparte con Caja del día y Reportes).
+    @property
+    def ver_ganancia(self):
+        return seguridad.ganancia_visible()
 
     def __init__(self, padre):
         super().__init__(padre, fg_color="transparent")
@@ -112,6 +115,7 @@ class FranjaIndicadores(ctk.CTkFrame):
                 self._b_abrir = self._boton_chico(tarjeta, "Abrir caja", self._abrir,
                                                   principal=True)
         self.refrescar()
+        clave_dueno.vigilar(self, self.refrescar)
 
     @staticmethod
     def _boton_chico(tarjeta, texto, comando, principal=False):
@@ -125,7 +129,7 @@ class FranjaIndicadores(ctk.CTkFrame):
         return b
 
     def _alternar(self):
-        FranjaIndicadores.ver_ganancia = not FranjaIndicadores.ver_ganancia
+        clave_dueno.alternar(self)
         self.refrescar()
 
     def _abrir(self):

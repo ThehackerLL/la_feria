@@ -22,6 +22,7 @@ Tablas propias (se crean solas): anulaciones y reembolsos.
 from datetime import datetime
 
 from app.base_datos.conexion import transaccion
+from app.servicios import huella, seguridad
 from app.servicios.inventario import _usar
 from app.servicios.ventas import FORMAS_PAGO, numero_venta
 
@@ -61,10 +62,14 @@ def preparar(con):
     if "al_stock" not in columnas:       # bases creadas antes de esta opción
         con.execute("ALTER TABLE anulaciones ADD COLUMN al_stock "
                     "INTEGER NOT NULL DEFAULT 1")
+    if "usuario" not in columnas:        # quién anuló
+        con.execute("ALTER TABLE anulaciones ADD COLUMN usuario "
+                    "TEXT NOT NULL DEFAULT ''")
     columnas = {f["name"] for f in con.execute("PRAGMA table_info(devoluciones)")}
     for nombre, tipo in (("producto_nuevo_id", "INTEGER"),
                          ("cantidad_nueva", "INTEGER"),
-                         ("diferencia", "REAL")):
+                         ("diferencia", "REAL"),
+                         ("usuario", "TEXT NOT NULL DEFAULT ''")):
         if nombre not in columnas:       # columnas del cambio de producto
             con.execute(f"ALTER TABLE devoluciones ADD COLUMN {nombre} {tipo}")
     return con
@@ -223,9 +228,10 @@ def anular_venta(venta_id, motivo, volver_al_stock=True, ahora=None, con=None):
             devuelto.append({"forma_pago": forma, "monto": monto})
 
         c.execute("UPDATE ventas SET estado = 'anulada' WHERE id = ?", (venta_id,))
-        c.execute("INSERT INTO anulaciones (venta_id, fecha, motivo, al_stock) "
-                  "VALUES (?, ?, ?, ?)",
-                  (venta_id, fecha, motivo, 1 if volver_al_stock else 0))
+        c.execute("INSERT INTO anulaciones (venta_id, fecha, motivo, al_stock, "
+                  "usuario) VALUES (?, ?, ?, ?, ?)",
+                  (venta_id, fecha, motivo, 1 if volver_al_stock else 0,
+                   seguridad.nombre_usuario()))
     return {"venta_id": venta_id, "numero": numero_venta(venta_id),
             "devuelto": devuelto, "volvio_al_stock": bool(volver_al_stock),
             "total_devuelto": round(sum(d["monto"] for d in devuelto), 2)}
@@ -336,11 +342,11 @@ def devolver_producto(venta_id, detalle_id, cantidad, forma_pago="Efectivo",
                       "monto) VALUES (?, ?, ?, ?)",
                       (venta_id, fecha, forma_pago, r["dinero"]))
         c.execute("INSERT INTO devoluciones (venta_id, producto_id, fecha, "
-                  "cantidad, valor, dinero, forma_pago, al_stock) "
-                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                  "cantidad, valor, dinero, forma_pago, al_stock, usuario) "
+                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                   (venta_id, linea["producto_id"], fecha, n, r["valor"],
                    r["dinero"], forma_pago if r["dinero"] > 0 else "",
-                   1 if volver_al_stock else 0))
+                   1 if volver_al_stock else 0, seguridad.nombre_usuario()))
     return {"venta_id": venta_id, "numero": numero_venta(venta_id),
             "producto": r["nombre"], "cantidad": n, "valor": r["valor"],
             "baja_deuda": r["baja_deuda"], "dinero": r["dinero"],
@@ -351,7 +357,7 @@ def devolver_producto(venta_id, detalle_id, cantidad, forma_pago="Efectivo",
 def _calcular_cambio(c, venta_id, detalle_id, cantidad, nuevo_id,
                      cantidad_nueva, precio):
     r = _calcular_devolucion(c, venta_id, detalle_id, cantidad, permitir_todo=True)
-    nuevo = c.execute("SELECT id, nombre, costo, precio_mayor, stock, activo "
+    nuevo = c.execute("SELECT id, codigo, nombre, costo, precio_mayor, stock, activo "
                       "FROM productos WHERE id = ?", (nuevo_id,)).fetchone()
     if nuevo is None or not nuevo["activo"]:
         raise ValueError("Elige el producto que se lleva.")
@@ -398,6 +404,7 @@ def cambiar_producto(venta_id, detalle_id, cantidad, nuevo_id, cantidad_nueva,
     fecha = _ahora(ahora)
     with _usar(con) as c:
         preparar(c)
+        huella.preparar(c)                  # antes de escribir nada
         r = _calcular_cambio(c, venta_id, detalle_id, cantidad, nuevo_id,
                              cantidad_nueva, precio)
         if r["diferencia"] != 0 and forma_pago not in FORMAS_PAGO:
@@ -414,6 +421,16 @@ def cambiar_producto(venta_id, detalle_id, cantidad, nuevo_id, cantidad_nueva,
         c.execute("UPDATE ventas SET subtotal = ROUND(subtotal + ?, 2), "
                   "total = ROUND(total + ?, 2) WHERE id = ?",
                   (r["valor_nuevo"], r["valor_nuevo"], venta_id))
+        cliente = c.execute(
+            "SELECT COALESCE(cl.nombre, 'Público general') AS n FROM ventas v "
+            "LEFT JOIN clientes cl ON cl.id = v.cliente_id WHERE v.id = ?",
+            (venta_id,)).fetchone()["n"]
+        huella.registrar(
+            c, venta_id, fecha, cliente, seguridad.nombre_usuario(),
+            forma_pago if r["diferencia"] else "Cambio",
+            [{"producto_id": nuevo["id"], "codigo": nuevo["codigo"],
+              "nombre": nuevo["nombre"], "cantidad": r["cantidad_nueva"],
+              "costo": nuevo["costo"], "precio": r["precio"]}])
         actualizado = c.execute(
             "UPDATE productos SET stock = stock - ? WHERE id = ? AND stock >= ?",
             (r["cantidad_nueva"], nuevo["id"], r["cantidad_nueva"])).rowcount
@@ -430,12 +447,13 @@ def cambiar_producto(venta_id, detalle_id, cantidad, nuevo_id, cantidad_nueva,
                       (venta_id, fecha, forma_pago, -r["diferencia"]))
         c.execute("INSERT INTO devoluciones (venta_id, producto_id, fecha, "
                   "cantidad, valor, dinero, forma_pago, al_stock, "
-                  "producto_nuevo_id, cantidad_nueva, diferencia) "
-                  "VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)",
+                  "producto_nuevo_id, cantidad_nueva, diferencia, usuario) "
+                  "VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)",
                   (venta_id, linea["producto_id"], fecha, n, r["valor"],
                    forma_pago if r["diferencia"] else "",
                    1 if volver_al_stock else 0, nuevo["id"],
-                   r["cantidad_nueva"], r["diferencia"]))
+                   r["cantidad_nueva"], r["diferencia"],
+                   seguridad.nombre_usuario()))
     return {"venta_id": venta_id, "numero": numero_venta(venta_id),
             "devuelto": r["nombre"], "cantidad": n, "nuevo": nuevo["nombre"],
             "cantidad_nueva": r["cantidad_nueva"], "valor_nuevo": r["valor_nuevo"],

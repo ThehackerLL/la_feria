@@ -1,8 +1,10 @@
 """Exportar los reportes a Excel (carpeta «reportes»).
 
 El Excel es una FOTO del periodo: muestra lo mismo que la pantalla Reportes.
-Los costos y la ganancia solo se incluyen si `con_costos=True` (la pantalla lo
-pide cuando la ganancia está visible).
+La hoja «Ventas» (una fila por producto, con usuario, descuento y ganancia)
+siempre lleva ganancia: la pantalla pide la contraseña del dueño para exportar.
+En las demás hojas, los costos y la ganancia solo se incluyen si
+`con_costos=True` (la pantalla lo pide cuando la ganancia está visible).
 
 Hojas: Resumen, Día por día (o Mes por mes), Ventas, Más vendidos,
 Productos parados y Cierres de caja.
@@ -142,25 +144,27 @@ def _hoja_dias(wb, periodo, con_costos, hoy):
     _pagina(ws)
 
 
-def _hoja_ventas(wb, periodo, con_costos, hoy):
+def _hoja_ventas(wb, periodo, hoy):
+    """Una fila por producto vendido. Siempre lleva costo y ganancia: el Excel
+    solo se exporta con la contraseña del dueño."""
     ws = wb.create_sheet("Ventas")
-    _titulo(ws, "Ventas del periodo", "Pagado = lo cobrado hasta hoy; Por cobrar = lo que falta (créditos).")
-    ventas = reportes.ventas_del_periodo(periodo, hoy)
-    cab = ["Venta", "Fecha", "Hora", "Cliente", "Total", "Pagado", "Por cobrar", "Forma de pago"]
-    if con_costos:
-        cab += ["Costo", "Ganancia"]
-    filas = []
-    for v in ventas:
-        fila = [v["numero"], _dmy(v["fecha"]), str(v["fecha"])[11:16], v["cliente"],
-                v["total"], v["pagado"], v["por_cobrar"], v["formas"]]
-        if con_costos:
-            fila += [v["costo"], v["ganancia"]]
-        filas.append(fila)
-    fmts = [None, None, None, None, DINERO, DINERO, DINERO, None, DINERO, DINERO]
-    fin = _tabla(ws, 4, cab, filas, fmts, [12, 12, 8, 30, 14, 14, 14, 24, 14, 14])
+    _titulo(ws, "Ventas del periodo",
+            "Una fila por producto vendido. Descuento = la parte del descuento "
+            "de la venta que le toca a ese producto.")
+    cab = ["Venta", "Fecha", "Hora", "Cliente", "Producto", "Cant.", "Usuario",
+           "Forma de pago", "Costo", "Precio de venta", "Descuento", "Total",
+           "Ganancia"]
+    filas = [[l["numero"], _dmy(l["fecha"]), str(l["fecha"])[11:16], l["cliente"],
+              l["producto"], l["cantidad"], l["vendedor"] or "—", l["forma"],
+              l["costo"], l["precio"], l["descuento"], l["total"], l["ganancia"]]
+             for l in reportes.lineas_del_periodo(periodo, hoy)]
+    fmts = [None, None, None, None, None, "0", None, None,
+            DINERO, DINERO, DINERO, DINERO, DINERO]
+    fin = _tabla(ws, 4, cab, filas, fmts,
+                 [12, 12, 8, 26, 30, 7, 20, 22, 12, 15, 12, 14, 14])
     if filas:
         ws.cell(row=fin, column=1, value="Total")
-        for j in (5, 6, 7) + ((9, 10) if con_costos else ()):
+        for j in (11, 12, 13):
             c = ws.cell(row=fin, column=j, value=round(sum(f[j - 1] for f in filas), 2))
             c.number_format = DINERO
         _negrita_fila(ws, fin, len(cab))
@@ -247,7 +251,7 @@ def exportar_reporte(periodo, con_costos=False, hoy=None, carpeta=None):
     wb = Workbook()
     _hoja_resumen(wb, r, con_costos)
     _hoja_dias(wb, periodo, con_costos, hoy)
-    _hoja_ventas(wb, periodo, con_costos, hoy)
+    _hoja_ventas(wb, periodo, hoy)
     _hoja_productos(wb, periodo, con_costos, hoy)
     _hoja_cierres(wb, periodo, hoy)
     nombre = {"año": "anio"}.get(periodo, periodo)   # nombre de archivo sin ñ

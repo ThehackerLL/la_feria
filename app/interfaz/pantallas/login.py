@@ -235,7 +235,10 @@ class VentanaIngreso(ctk.CTk):
         boton(cuerpo, "Olvidé mi contraseña", self._recuperar, "secundario",
               ancho=340).pack(padx=40, pady=(0, 28))
         _centrar(self)
-        (self.clave if len(usuarios) == 1 else self.usuario).foco()
+        if len(usuarios) == 1:
+            self.clave.foco()
+        else:
+            self.usuario.caja.focus_set()      # la lista de usuarios no tiene foco()
 
     def _ingresar(self):
         try:

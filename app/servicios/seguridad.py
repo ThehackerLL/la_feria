@@ -278,6 +278,24 @@ def cambiar_clave_usuario(nombre, clave_actual, clave_nueva, con=None):
                   (sal, huella, u["id"]))
 
 
+def poner_clave_usuario(usuario_id, clave_nueva, con=None):
+    """Pone una contraseña nueva a un usuario que la olvidó (sin pedir la vieja).
+
+    Quien lo llama debe haber comprobado antes la contraseña del dueño."""
+    _validar_clave(clave_nueva, "La contraseña nueva")
+    with _usar(con) as c:
+        _preparar(c)
+        if c.execute("SELECT 1 FROM usuarios WHERE id = ? AND activo = 1",
+                     (usuario_id,)).fetchone() is None:
+            raise ValueError("Ese usuario ya no existe.")
+        if _leer(c, "dueno_huella") and _coincide(
+                clave_nueva, _leer(c, "dueno_sal"), _leer(c, "dueno_huella")):
+            raise ValueError("Esa contraseña es la del dueño: elige otra.")
+        sal, huella = _nueva_huella(clave_nueva)
+        c.execute("UPDATE usuarios SET sal = ?, huella = ? WHERE id = ?",
+                  (sal, huella, usuario_id))
+
+
 def quitar_usuario(usuario_id, con=None):
     """Desactiva un usuario (su nombre sigue en lo que ya registró).
 
@@ -298,11 +316,10 @@ def quitar_usuario(usuario_id, con=None):
 
 
 # --------------------------------------------------------- ganancia (dueño)
-def desbloquear_ganancia(clave, ahora=None, con=None):
-    """Si la contraseña del dueño es correcta, la ganancia se ve 60 segundos.
-
-    Devuelve True; si no es correcta, falla con ValueError.
-    """
+def comprobar_clave_dueno(clave, ahora=None, con=None):
+    """Revisa la contraseña del dueño sin mostrar la ganancia (sirve para entrar
+    a las pestañas protegidas). True si es correcta; si no, ValueError.
+    Cuenta los intentos malos igual que en el ingreso."""
     ahora = _ahora(ahora)
     _revisar_bloqueo(ahora)
     with _usar(con) as c:
@@ -312,6 +329,16 @@ def desbloquear_ganancia(clave, ahora=None, con=None):
         _fallo(ahora)
         raise ValueError("Contraseña del dueño incorrecta.")
     _acierto()
+    return True
+
+
+def desbloquear_ganancia(clave, ahora=None, con=None):
+    """Si la contraseña del dueño es correcta, la ganancia se ve 60 segundos.
+
+    Devuelve True; si no es correcta, falla con ValueError.
+    """
+    ahora = _ahora(ahora)
+    comprobar_clave_dueno(clave, ahora, con)
     _estado["ganancia_hasta"] = ahora + timedelta(seconds=SEGUNDOS_GANANCIA)
     return True
 

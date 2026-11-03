@@ -10,11 +10,11 @@ from datetime import date, datetime
 
 import customtkinter as ctk
 
-from app.interfaz import estilos as e
+from app.interfaz import clave_dueno, estilos as e
 from app.interfaz.componentes import Alerta, Campo, Tabla, TarjetaResumen, boton
 from app.interfaz.dialogo_caja import cerrar_caja
 from app.interfaz.dialogo_credito import fecha_corta
-from app.servicios import caja
+from app.servicios import caja, seguridad
 from app.utilidades.formato import entero, moneda
 from app.utilidades.validaciones import a_numero
 
@@ -61,7 +61,6 @@ def _dinero(valor):
 class VistaCajaDia(ctk.CTkFrame):
     def __init__(self, padre):
         super().__init__(padre, fg_color="transparent")
-        self._ver_ganancia = False
         self._crear_encabezado()
         self.alerta = Alerta(self)
         self.alerta.pack(fill="x")
@@ -74,6 +73,7 @@ class VistaCajaDia(ctk.CTkFrame):
         self._cuerpo.grid_rowconfigure(0, weight=1)
         self._crear_izquierda()
         self._crear_historial()
+        clave_dueno.vigilar(self, self.refrescar)
 
     # ------------------------------------------------------------ encabezado
     def _crear_encabezado(self):
@@ -113,7 +113,7 @@ class VistaCajaDia(ctk.CTkFrame):
                          padx=(0 if i == 0 else e.ESPACIO // 2,
                                0 if i == 3 else e.ESPACIO // 2))
             self._tarjetas[clave] = tarjeta
-        # la ganancia se oculta con un botón pequeño (sin contraseña por ahora)
+        # la ganancia se oculta con un botón pequeño (pide la contraseña del dueño)
         self._b_ojo = ctk.CTkButton(
             self._tarjetas["ganancia"], text="Mostrar", width=64, height=24,
             fg_color=e.COLOR_NEUTRO, hover_color=e.COLOR_NEUTRO_HOVER,
@@ -121,8 +121,12 @@ class VistaCajaDia(ctk.CTkFrame):
             command=self._alternar_ganancia)
         self._b_ojo.place(relx=1.0, x=-10, y=8, anchor="ne")
 
+    @property
+    def _ver_ganancia(self):
+        return seguridad.ganancia_visible()
+
     def _alternar_ganancia(self):
-        self._ver_ganancia = not self._ver_ganancia
+        clave_dueno.alternar(self)
         self.refrescar()
 
     # ------------------------------------------------------------- izquierda

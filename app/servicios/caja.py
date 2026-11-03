@@ -19,7 +19,7 @@ pagos de compra no tienen pagos registrados y por eso no aparecen aquí.
 """
 from datetime import date, datetime
 
-from app.servicios import anulaciones
+from app.servicios import anulaciones, seguridad
 from app.servicios.inventario import _usar
 from app.servicios.ventas import FORMAS_PAGO
 
@@ -58,6 +58,11 @@ def _dia(hoy):
 
 def _preparar(con):
     con.execute(_TABLA)
+    columnas = {f["name"] for f in con.execute("PRAGMA table_info(caja_dias)")}
+    for nombre in ("abrio", "cerro"):    # quién abrió y quién cerró la caja
+        if nombre not in columnas:
+            con.execute(f"ALTER TABLE caja_dias ADD COLUMN {nombre} "
+                        "TEXT NOT NULL DEFAULT ''")
     anulaciones.preparar(con)
     return con
 
@@ -228,7 +233,8 @@ def abrir_dia(apertura, hoy=None, con=None):
         if previo:
             raise ValueError("La caja de hoy ya está abierta." if previo["estado"] == ABIERTA
                              else "La caja de hoy ya fue cerrada.")
-        c.execute("INSERT INTO caja_dias (fecha, apertura) VALUES (?, ?)", (f, monto))
+        c.execute("INSERT INTO caja_dias (fecha, apertura, abrio) VALUES (?, ?, ?)",
+                  (f, monto, seguridad.nombre_usuario()))
         return _fila_dia(c.execute("SELECT * FROM caja_dias WHERE fecha = ?",
                                    (f,)).fetchone())
 
@@ -257,9 +263,10 @@ def cerrar_dia(contado, hoy=None, nota="", con=None):
         diferencia = round(monto - esperado, 2)
         c.execute(
             "UPDATE caja_dias SET estado = ?, esperado = ?, contado = ?, "
-            "diferencia = ?, nota = ?, cerrada_en = datetime('now', 'localtime') "
-            "WHERE fecha = ?",
-            (CERRADA, esperado, monto, diferencia, (nota or "").strip(), f))
+            "diferencia = ?, nota = ?, cerrada_en = datetime('now', 'localtime'), "
+            "cerro = ? WHERE fecha = ?",
+            (CERRADA, esperado, monto, diferencia, (nota or "").strip(),
+             seguridad.nombre_usuario(), f))
         r["esperado"], r["contado"], r["diferencia"] = esperado, monto, diferencia
         r["dia"] = _fila_dia(c.execute("SELECT * FROM caja_dias WHERE fecha = ?",
                                        (f,)).fetchone())
@@ -275,7 +282,9 @@ def cerrar_sin_contar(hoy, nota="", con=None):
         esperado = resumen_dia(f, c)["efectivo_esperado"]
         c.execute(
             "UPDATE caja_dias SET estado = ?, esperado = ?, nota = ?, "
-            "cerrada_en = datetime('now', 'localtime') WHERE fecha = ?",
-            (SIN_CONTAR, esperado, (nota or "").strip(), f))
+            "cerrada_en = datetime('now', 'localtime'), cerro = ? "
+            "WHERE fecha = ?",
+            (SIN_CONTAR, esperado, (nota or "").strip(),
+             seguridad.nombre_usuario(), f))
         return _fila_dia(c.execute("SELECT * FROM caja_dias WHERE fecha = ?",
                                    (f,)).fetchone())

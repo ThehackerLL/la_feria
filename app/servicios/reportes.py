@@ -210,6 +210,51 @@ def ventas_del_periodo(periodo, hoy=None, con=None):
              "ganancia": round(f["total"] - f["costo"], 2)} for f in filas]
 
 
+def lineas_del_periodo(periodo, hoy=None, con=None):
+    """Una fila por producto vendido en el periodo (ventas no anuladas), de la
+    más reciente a la más antigua. Sirve para la hoja «Ventas» del Excel.
+
+    Trae: número de venta, fecha y hora, cliente, código, producto, cantidad,
+    vendedor, forma de pago, costo y precio por unidad, la parte del descuento
+    de la venta que le toca, el total y la ganancia de la línea. Lo devuelto
+    por el cliente ya está descontado (igual que en el resto de reportes).
+    """
+    from app.servicios import huella                # evita un ciclo de imports
+    from app.servicios.ventas import numero_venta
+    desde, hasta, _, _ = rango(periodo, hoy)
+    filas = []
+    with _usar(con) as c:
+        ventas = c.execute(
+            "SELECT v.id, v.fecha, v.descuento, v.vendedor, "
+            "COALESCE(cl.nombre, 'Público general') AS cliente, "
+            "EXISTS(SELECT 1 FROM credito_cuotas q WHERE q.venta_id = v.id) AS credito "
+            "FROM ventas v LEFT JOIN clientes cl ON cl.id = v.cliente_id "
+            "WHERE v.estado = 'activa' AND substr(v.fecha, 1, 10) BETWEEN ? AND ? "
+            "ORDER BY v.fecha DESC, v.id DESC",
+            (desde.isoformat(), hasta.isoformat())).fetchall()
+        for v in ventas:
+            lineas = [dict(f) for f in c.execute(
+                "SELECT p.codigo, p.nombre, d.cantidad, d.costo_unitario AS costo, "
+                "d.precio_unitario AS precio FROM venta_detalle d "
+                "JOIN productos p ON p.id = d.producto_id "
+                "WHERE d.venta_id = ? ORDER BY d.id", (v["id"],))]
+            pagos = c.execute("SELECT forma_pago FROM venta_pagos WHERE venta_id = ? "
+                              "ORDER BY id", (v["id"],)).fetchall()
+            forma = huella.forma_de_pago(pagos, bool(v["credito"]))
+            descuentos = huella.repartir_descuento(lineas, v["descuento"])
+            for l, desc in zip(lineas, descuentos):
+                total = round(l["cantidad"] * l["precio"] - desc, 2)
+                filas.append({
+                    "numero": numero_venta(v["id"]), "fecha": v["fecha"],
+                    "cliente": v["cliente"], "codigo": l["codigo"],
+                    "producto": l["nombre"], "cantidad": l["cantidad"],
+                    "vendedor": v["vendedor"] or "", "forma": forma,
+                    "costo": round(l["costo"], 2), "precio": round(l["precio"], 2),
+                    "descuento": round(desc, 2), "total": total,
+                    "ganancia": round(total - l["cantidad"] * l["costo"], 2)})
+    return filas
+
+
 # ----------------------------------------------------------------- productos
 def _unidades_vendidas(c, desde, hasta):
     return {f["producto_id"]: f["u"] for f in c.execute(

@@ -10,10 +10,10 @@ from datetime import date
 
 import customtkinter as ctk
 
-from app.interfaz import estilos as e
+from app.interfaz import clave_dueno, estilos as e
 from app.interfaz.componentes import Alerta, Tabla, TarjetaResumen, boton, confirmar
 from app.interfaz.dialogo_credito import fecha_corta
-from app.servicios import excel, reportes, respaldos
+from app.servicios import excel, reportes, respaldos, seguridad
 from app.utilidades.formato import entero, moneda
 
 _MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio",
@@ -59,7 +59,6 @@ class PantallaReportes(ctk.CTkFrame):
     def __init__(self, padre):
         super().__init__(padre, fg_color="transparent")
         self._periodo = "hoy"
-        self._ver_ganancia = False
         self._crear_barra()
         self.alerta = Alerta(self)
         self.alerta.pack(fill="x")
@@ -72,6 +71,7 @@ class PantallaReportes(ctk.CTkFrame):
         self._crear_izquierda()
         self._crear_derecha()
         self.refrescar()
+        clave_dueno.vigilar(self, self.refrescar)
 
     # ----------------------------------------------------------------- barra
     def _crear_barra(self):
@@ -101,8 +101,11 @@ class PantallaReportes(ctk.CTkFrame):
 
     def _exportar(self):
         """Guarda el periodo elegido en un Excel (en la carpeta de Drive elegida
-        en Configuración, o en «reportes»). Lleva la
-        ganancia y los costos solo si la ganancia está visible en pantalla."""
+        en Configuración, o en «reportes»). Pide la contraseña del dueño: la hoja
+        «Ventas» lleva la ganancia de cada producto. Las demás hojas llevan costos
+        y ganancia solo si la ganancia está visible en pantalla."""
+        if not clave_dueno.pedir_para_exportar(self):
+            return
         try:
             ruta = excel.exportar_reporte(self._periodo,
                                           con_costos=self._ver_ganancia)
@@ -125,16 +128,22 @@ class PantallaReportes(ctk.CTkFrame):
             copia = ""
         if confirmar(self, "Excel listo",
                      f"Se guardó en:\n{ruta}\n{copia}\n"
-                     + ("Incluye costos y ganancia." if self._ver_ganancia else
-                        "No incluye costos ni ganancia.") + "\n\n¿Abrirlo ahora?",
+                     + "La hoja Ventas incluye ganancia por producto."
+                     + ("\nLas demás hojas también llevan costos y ganancia."
+                        if self._ver_ganancia else "")
+                     + "\n\n¿Abrirlo ahora?",
                      texto_si="Abrir"):
             try:
                 os.startfile(ruta)            # solo existe en Windows
             except (AttributeError, OSError):
                 pass
 
+    @property
+    def _ver_ganancia(self):
+        return seguridad.ganancia_visible()
+
     def _alternar_ganancia(self):
-        self._ver_ganancia = not self._ver_ganancia
+        clave_dueno.alternar(self)
         self.refrescar()
 
     # -------------------------------------------------------------- tarjetas

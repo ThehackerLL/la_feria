@@ -5,7 +5,7 @@ from datetime import date
 import customtkinter as ctk
 
 from app import config
-from app.interfaz import estilos as e
+from app.interfaz import clave_dueno, estilos as e
 from app.interfaz.componentes import _Dialogo, aviso, confirmar
 from app.servicios import creditos, respaldos, seguridad
 from app.utilidades.formato import moneda
@@ -21,8 +21,11 @@ PESTANAS = [
     ("Envíos", "envios", "PantallaEnvios", "Etapa 5"),
     ("Caja y reportes", "caja", "PantallaCaja", "Etapa 4"),
     ("Clientes", "clientes", "PantallaClientes", "Etapa 5"),
+    ("Huella digital", "huella", "PantallaHuella", "Etapa 6"),
     ("Configuración", "configuracion", "PantallaConfiguracion", "Etapa 6"),
 ]
+# Piden la contraseña del dueño al entrar; al salir se vuelven a bloquear.
+PROTEGIDAS = ("Inventario", "Compras", "Huella digital")
 PESTANA_INICIAL = "Ventas"       # la pestaña que se ve al abrir el programa
 
 _MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
@@ -67,6 +70,7 @@ class VentanaPrincipal(ctk.CTk):
         self._botones = {}
         self._pantallas = {}
         self._activa = None
+        self._desbloqueada = None      # pestaña protegida abierta ahora
         self.cerro_sesion = False      # True: vuelve a la pantalla de ingreso
 
         self._crear_encabezado()
@@ -115,7 +119,14 @@ class VentanaPrincipal(ctk.CTk):
 
     # --------------------------------------------------------------- pestañas
     def mostrar(self, nombre):
-        """Muestra la pantalla de la pestaña elegida (se crea la 1.ª vez)."""
+        """Muestra la pantalla de la pestaña elegida (se crea la 1.ª vez).
+
+        Las pestañas protegidas piden la contraseña del dueño cada vez que se
+        entra desde otra pestaña; si no se escribe bien, no se cambia."""
+        if nombre in PROTEGIDAS and self._desbloqueada != nombre:
+            if not clave_dueno.pedir_acceso(self, nombre):
+                return
+        self._desbloqueada = nombre if nombre in PROTEGIDAS else None
         if nombre not in self._pantallas:
             self._pantallas[nombre] = self._crear_pantalla(nombre)
         if self._activa is not None:

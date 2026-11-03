@@ -2,7 +2,7 @@
 from datetime import datetime
 
 from app.base_datos.conexion import transaccion
-from app.servicios import creditos, inventario, proveedores
+from app.servicios import creditos, inventario, proveedores, seguridad
 
 # Orden en que se ofrecen las formas de pago al comprar (se compra por
 # internet a Lima: primero transferencia y Yape/Plin, y por último efectivo).
@@ -108,9 +108,10 @@ def registrar_compra(items, proveedor="", pagos=None, proveedor_id=None,
             proveedor = guardado.nombre
         fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         compra_id = con.execute(
-            "INSERT INTO compras (fecha, proveedor, total, proveedor_id) "
-            "VALUES (?, ?, 0, ?)",
-            (fecha, (proveedor or "").strip(), proveedor_id)).lastrowid
+            "INSERT INTO compras (fecha, proveedor, total, proveedor_id, "
+            "vendedor) VALUES (?, ?, 0, ?, ?)",
+            (fecha, (proveedor or "").strip(), proveedor_id,
+             seguridad.nombre_usuario())).lastrowid
 
         total = 0.0
         lineas = []

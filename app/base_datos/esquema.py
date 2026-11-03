@@ -153,6 +153,12 @@ def _agregar_columnas(con):
                     "INTEGER REFERENCES proveedores(id)")
     con.execute("CREATE INDEX IF NOT EXISTS idx_compras_proveedor "
                 "ON compras(proveedor_id)")
+    # quién hizo la venta / la compra (nombre de la cuenta con la que entró)
+    for tabla in ("ventas", "compras"):
+        columnas = {f["name"] for f in con.execute(f"PRAGMA table_info({tabla})")}
+        if "vendedor" not in columnas:
+            con.execute(f"ALTER TABLE {tabla} ADD COLUMN vendedor "
+                        "TEXT NOT NULL DEFAULT ''")
     # clientes: DNI y dirección (opcionales)
     columnas = {fila["name"] for fila in con.execute("PRAGMA table_info(clientes)")}
     for nombre in ("dni", "direccion"):
@@ -166,3 +172,5 @@ def crear_tablas():
     with transaccion() as con:
         con.executescript(TABLAS)
         _agregar_columnas(con)
+        from app.servicios import huella      # tabla protegida de ventas
+        huella.preparar(con, rellenar=True)
