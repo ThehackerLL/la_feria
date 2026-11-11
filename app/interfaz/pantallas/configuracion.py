@@ -5,8 +5,10 @@ cambios). Aquí se puede respaldar a mano, ver los respaldos guardados,
 elegir una carpeta para una copia extra (Google Drive, USB) y restaurar.
 También se elige la carpeta (p. ej. de Google Drive) donde se copia cada Excel
 de reportes, para verlo desde el celular.
+Datos de la tienda: el nombre que se ve en el programa y en los Excel (cambiarlo
+pide la contraseña del dueño).
 Usuarios y contraseñas: crear y quitar usuarios y cambiar contraseñas (casi todo
-pide la contraseña del dueño). Más adelante irán aquí los datos de la tienda.
+pide la contraseña del dueño).
 """
 import os
 from datetime import date, datetime
@@ -18,7 +20,7 @@ from app import config
 from app.interfaz import estilos as e
 from app.interfaz.componentes import Alerta, Tabla, aviso, boton, confirmar
 from app.interfaz.dialogo_formulario import pedir_formulario
-from app.servicios import respaldos, seguridad
+from app.servicios import respaldos, seguridad, tienda
 
 COLUMNAS = [
     ("fecha", "Fecha y hora", 190, "w"),
@@ -51,11 +53,53 @@ class PantallaConfiguracion(ctk.CTkFrame):
         # Con scroll: en ventanas bajas todas las secciones siguen alcanzables.
         self._cuerpo = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self._cuerpo.pack(fill="both", expand=True)
+        self._crear_tienda()
         self._crear_usuarios()
         self._crear_respaldos()
         self._crear_excel()
 
     # --------------------------------------------------------------- armado
+    def _crear_tienda(self):
+        panel = ctk.CTkFrame(self._cuerpo, border_width=1,
+                             border_color=e.COLOR_BORDE)
+        panel.pack(fill="x", pady=(0, e.ESPACIO))
+        panel.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(panel, text="Datos de la tienda", anchor="w",
+                     font=ctk.CTkFont(size=e.TAM_SUBTITULO, weight="bold")
+                     ).grid(row=0, column=0, columnspan=2, sticky="ew",
+                            padx=16, pady=(14, 2))
+        ctk.CTkLabel(panel, anchor="w", justify="left", wraplength=760,
+                     text_color=e.COLOR_TEXTO_SUAVE,
+                     text="El nombre se ve arriba en el programa, en la ventana "
+                          "de ingreso y en los Excel."
+                     ).grid(row=1, column=0, columnspan=2, sticky="ew",
+                            padx=16, pady=(0, 8))
+        self._nombre_tienda = ctk.CTkLabel(
+            panel, text="", anchor="w", font=ctk.CTkFont(weight="bold"))
+        self._nombre_tienda.grid(row=2, column=0, sticky="ew", padx=16,
+                                 pady=(0, 16))
+        boton(panel, "Cambiar nombre", self._cambiar_nombre_tienda,
+              "secundario", ancho=160).grid(row=2, column=1, padx=(8, 16),
+                                            pady=(0, 16))
+
+    def _cambiar_nombre_tienda(self):
+        def accion(v):
+            seguridad.comprobar_clave_dueno(v["dueno"])
+            tienda.guardar_nombre(v["nombre"])
+        if pedir_formulario(
+                self, "Nombre de la tienda",
+                [("nombre", "Nombre de la tienda", False),
+                 ("dueno", "Contraseña del dueño", True)],
+                "Guardar", accion):
+            self._cargar_tienda()
+            ventana = self.winfo_toplevel()
+            if hasattr(ventana, "actualizar_nombre"):
+                ventana.actualizar_nombre()
+            self.alerta.mostrar("El nombre de la tienda se guardó.", "ok")
+
+    def _cargar_tienda(self):
+        self._nombre_tienda.configure(text=f"Nombre de la tienda:  {tienda.nombre()}")
+
     def _crear_usuarios(self):
         panel = ctk.CTkFrame(self._cuerpo, border_width=1,
                              border_color=e.COLOR_BORDE)
@@ -284,6 +328,7 @@ class PantallaConfiguracion(ctk.CTkFrame):
     # ------------------------------------------------------------- mostrar
     def refrescar(self):
         """Se llama al abrir la pestaña."""
+        self._cargar_tienda()
         self._cargar_usuarios()
         self._lista = respaldos.listar()
         self._tabla.cargar([

@@ -16,7 +16,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from app import config
-from app.servicios import caja, reportes, respaldos
+from app.servicios import caja, reportes, respaldos, tienda
 
 FUENTE = "Arial"
 AZUL, GRIS = "2B4C8C", "E6E9EE"
@@ -93,7 +93,8 @@ def _hoja_resumen(wb, r, con_costos):
     ws = wb.active
     ws.title = "Resumen"
     _titulo(ws, f"Reporte: {r['etiqueta'].lower()}",
-            f"Del {_dmy(r['desde'])} al {_dmy(r['hasta'])}   ·   generado "
+            f"{tienda.nombre()}   ·   Del {_dmy(r['desde'])} al "
+            f"{_dmy(r['hasta'])}   ·   generado "
             f"{datetime.now():%d/%m/%Y %H:%M}")
     antes = r["frente_a"].capitalize()
     filas = [("Total vendido", r["vendido"], r["anterior"]["vendido"], _cambio(r["cambio"]["vendido"])),

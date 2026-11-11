@@ -10,8 +10,9 @@ Cómo se protege:
 - La base de datos rechaza cualquier UPDATE o DELETE sobre esta tabla.
 - Cada línea lleva un «sello» que depende de la anterior. Si alguien edita la
   base por fuera, el sello ya no coincide y `verificar()` lo detecta.
-- «¿Anulado?» no se guarda: se calcula con las anulaciones y devoluciones, que
-  también se conservan. Una venta anulada sigue apareciendo, con «Sí».
+- «Venta hecha» no se guarda: se calcula con las anulaciones, devoluciones y
+  cambios, que también se conservan. Una venta anulada sigue apareciendo, con
+  «Anulada»; si nada ocurrió, muestra «-».
 
 La tabla se crea sola (CREATE TABLE IF NOT EXISTS). Al crearla se copian las
 ventas que ya existían (con vendedor vacío).
@@ -159,6 +160,18 @@ def _desde(periodo, hoy):
     return None
 
 
+def _estado(anulada, devuelto, cambiado):
+    """Qué pasó con la venta: 'Anulada', 'Devuelto (2)', 'Cambiado (1)' o '-'."""
+    if anulada:
+        return "Anulada"
+    partes = []
+    if devuelto:
+        partes.append(f"Devuelto ({devuelto})")
+    if cambiado:
+        partes.append(f"Cambiado ({cambiado})")
+    return " + ".join(partes) if partes else "-"
+
+
 def listar(periodo="hoy", hoy=None, limite=LIMITE, con=None):
     """Líneas de la huella, la más nueva primero. periodo: ver PERIODOS."""
     if periodo not in PERIODOS:
@@ -167,10 +180,15 @@ def listar(periodo="hoy", hoy=None, limite=LIMITE, con=None):
     hoy = hoy or date.today()
     desde = _desde(periodo, hoy)
     sql = ("SELECT h.*, "
-           "(EXISTS(SELECT 1 FROM anulaciones a WHERE a.venta_id = h.venta_id) "
-           " OR EXISTS(SELECT 1 FROM devoluciones d WHERE d.venta_id = h.venta_id "
-           "           AND d.producto_id = h.producto_id AND d.fecha >= h.fecha)"
-           ") AS anulado FROM huella h ")
+           "EXISTS(SELECT 1 FROM anulaciones a WHERE a.venta_id = h.venta_id) "
+           " AS anulada, "
+           "(SELECT COALESCE(SUM(d.cantidad), 0) FROM devoluciones d "
+           " WHERE d.venta_id = h.venta_id AND d.producto_id = h.producto_id "
+           " AND d.fecha >= h.fecha AND d.producto_nuevo_id IS NULL) AS devuelto, "
+           "(SELECT COALESCE(SUM(d.cantidad), 0) FROM devoluciones d "
+           " WHERE d.venta_id = h.venta_id AND d.producto_id = h.producto_id "
+           " AND d.fecha >= h.fecha AND d.producto_nuevo_id IS NOT NULL) AS cambiado "
+           "FROM huella h ")
     args = []
     if desde:
         sql += "WHERE substr(h.fecha, 1, 10) >= ? "
@@ -183,7 +201,10 @@ def listar(periodo="hoy", hoy=None, limite=LIMITE, con=None):
         filas = []
         for f in c.execute(sql, args):
             d = dict(f)
-            d["anulado"] = "Sí" if d["anulado"] else "No"
+            d["estado"] = _estado(d["anulada"], d["devuelto"], d["cambiado"])
+            d["anulado"] = "No" if d["estado"] == "-" else "Sí"
+            d["ganancia"] = round(
+                d["cantidad"] * (d["precio"] - d["costo"]) - d["descuento"], 2)
             filas.append(d)
         return filas
 

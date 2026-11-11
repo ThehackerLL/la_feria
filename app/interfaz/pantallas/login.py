@@ -8,11 +8,10 @@ Si se cierra la ventana sin entrar, el programa no se abre (entro = False).
 """
 import customtkinter as ctk
 
-from app import config
 from app.interfaz import estilos as e
 from app.interfaz.componentes import Campo, CampoLista, boton
-from app.servicios import seguridad
-
+from app.servicios import seguridad, tienda
+from app.interfaz.icono import poner_icono
 
 def _centrar(ventana, padre=None):
     ventana.update_idletasks()
@@ -183,7 +182,11 @@ class VentanaIngreso(ctk.CTk):
         e.aplicar_tema()
         super().__init__()
         self.entro = False
-        self.title(f"{config.NOMBRE_TIENDA} - Ingresar")
+        configurada = seguridad.hay_configuracion()
+        # Antes del primer uso aún no hay nombre de tienda: se ve «Sistema POS».
+        self._tienda = tienda.nombre() if configurada else "Sistema POS"
+        self.title(f"{self._tienda} - Ingresar")
+        poner_icono(self)
         self.resizable(False, False)
         self.configure(fg_color=e.COLOR_FONDO)
         self._cuerpo = None
@@ -200,7 +203,7 @@ class VentanaIngreso(ctk.CTk):
         self._cuerpo = ctk.CTkFrame(self)
         self._cuerpo.pack(fill="both", expand=True, padx=e.MARGEN * 2,
                           pady=e.MARGEN * 2)
-        ctk.CTkLabel(self._cuerpo, text=config.NOMBRE_TIENDA,
+        ctk.CTkLabel(self._cuerpo, text=self._tienda,
                      text_color=e.COLOR_PRIMARIO,
                      font=ctk.CTkFont(size=28, weight="bold")
                      ).pack(padx=40, pady=(28, 0))
@@ -266,6 +269,9 @@ class VentanaIngreso(ctk.CTk):
             "Primer uso",
             "Crea el primer usuario y la contraseña del dueño. La del dueño "
             "solo la debe saber el dueño: protege la ganancia.")
+        self.tienda = Campo(cuerpo, "Nombre de la tienda", ancho=340,
+                            ayuda="Ej.: La Feria")
+        self.tienda.pack(fill="x", padx=40, pady=(0, 8))
         self.nombre = Campo(cuerpo, "Nombre de quien vende (solo el nombre)",
                             ancho=340, ayuda="Ej.: Marta  →  Analista-Marta")
         self.nombre.pack(fill="x", padx=40, pady=(0, 8))
@@ -285,7 +291,7 @@ class VentanaIngreso(ctk.CTk):
         boton(cuerpo, "Crear y continuar", self._crear, "principal",
               ancho=340).pack(padx=40, pady=(4, 28))
         _centrar(self)
-        self.nombre.foco()
+        self.tienda.foco()
 
     def _crear(self):
         usuario, dueno = _clave_exacta(self.clave_u), _clave_exacta(self.clave_d)
@@ -298,11 +304,13 @@ class VentanaIngreso(ctk.CTk):
                 text="Las dos contraseñas del dueño no son iguales.")
             return
         try:
+            nombre_tienda = tienda.validar_nombre(self.tienda.obtener())
             recuperacion = seguridad.configurar_primera_vez(
                 self.nombre.obtener(), usuario, dueno)
         except ValueError as error:
             self.error.configure(text=str(error))
             return
+        tienda.guardar_nombre(nombre_tienda)
         # Las cuentas ya están creadas: se muestra la clave y se entra.
         dialogo = _DialogoClaveRecuperacion(self, recuperacion)
         self.wait_window(dialogo)

@@ -12,17 +12,21 @@ from app.servicios import huella
 from app.utilidades.formato import entero, moneda
 
 _COLUMNAS = [
-    ("fecha", "Fecha y hora", 125, "w"),
-    ("cliente", "Cliente", 250, "w"),
-    ("codigo", "Código", 75, "w"),
-    ("producto", "Producto", 140, "w", True),
-    ("cantidad", "Cantidad", 90, "center"),
-    ("costo", "Costo", 72, "e"),
-    ("precio", "Precio de venta", 150, "w"),
-    ("descuento", "Descuento", 96, "center"),
-    ("vendedor", "Vendedor", 200, "w"),
-    ("forma", "Forma de pago", 150, "w"),
-    ("anulado", "¿Anulado?", 100, "center"),
+    # Suman unos 1145 px: caben en la ventana normal (y «Producto» se estira).
+    # En pantallas chicas, o con escala de Windows alta, aparece la barra de
+    # desplazamiento horizontal.
+    ("fecha", "Fecha y hora", 130, "w"),
+    ("vendedor", "Vendedor", 105, "w"),
+    ("cliente", "Cliente", 180, "w"),
+    ("codigo", "Código", 65, "w"),
+    ("producto", "Producto", 110, "w", True),
+    ("cantidad", "Cantidad", 70, "center"),
+    ("costo", "Costo", 62, "e"),
+    ("precio", "Precio de venta", 110, "e"),
+    ("descuento", "Descuento", 80, "center"),
+    ("ganancia", "Ganancia", 78, "e"),
+    ("forma", "Forma de pago", 105, "w"),
+    ("estado", "Venta hecha", 120, "w"),
 ]
 
 
@@ -52,7 +56,7 @@ class PantallaHuella(ctk.CTkFrame):
             self, text="", anchor="w", justify="left", wraplength=900,
             fg_color=e.COLOR_PELIGRO_FONDO, text_color=e.COLOR_PELIGRO,
             corner_radius=e.RADIO, font=ctk.CTkFont(weight="bold"))
-        self.tabla = Tabla(self, _COLUMNAS, alto=18)
+        self.tabla = Tabla(self, _COLUMNAS, alto=18, scroll_x=True)
         self.tabla.pack(fill="both", expand=True)
 
     def _elegir(self, periodo):
@@ -67,12 +71,12 @@ class PantallaHuella(ctk.CTkFrame):
                         text_color="#FFFFFF" if activo else e.COLOR_TEXTO)
         filas = huella.listar(self._periodo)
         self.tabla.cargar([
-            (f["id"], (_fecha_hora(f["fecha"]), f["cliente"], f["codigo"],
-                       f["producto"], entero(f["cantidad"]), moneda(f["costo"]),
-                       moneda(f["precio"]),
-                       moneda(f["descuento"]) if f["descuento"] else "—",
-                       f["vendedor"] or "—", f["forma_pago"], f["anulado"]),
-             "aviso" if f["anulado"] == "Sí" else "")
+            (f["id"], (_fecha_hora(f["fecha"]), f["vendedor"] or "-", f["cliente"],
+                       f["codigo"], f["producto"], entero(f["cantidad"]),
+                       moneda(f["costo"]), moneda(f["precio"]),
+                       moneda(f["descuento"]) if f["descuento"] else "-",
+                       moneda(f["ganancia"]), f["forma_pago"], f["estado"]),
+             "aviso" if f["estado"] != "-" else "")
             for f in filas])
         texto = f"{len(filas)} {'producto' if len(filas) == 1 else 'productos'}"
         if len(filas) >= huella.LIMITE:

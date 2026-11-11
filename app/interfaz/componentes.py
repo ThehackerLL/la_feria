@@ -120,9 +120,11 @@ class Tabla(ctk.CTkFrame):
     elástica=True en UNA columna (la de texto largo): es la que se estira
     cuando la ventana crece. Los anchos se ajustan solos al escalado de
     pantalla de Windows.
+    scroll_x=True añade una barra horizontal que aparece sola cuando las
+    columnas no caben (pantallas chicas).
     """
 
-    def __init__(self, padre, columnas, alto=10):
+    def __init__(self, padre, columnas, alto=10, scroll_x=False):
         super().__init__(padre, border_width=1, border_color=e.COLOR_BORDE)
         e.configurar_tabla()
         ids = [c[0] for c in columnas]
@@ -142,11 +144,25 @@ class Tabla(ctk.CTkFrame):
         self.grid_rowconfigure(0, weight=1)
         self.arbol.grid(row=0, column=0, sticky="nsew", padx=(2, 0), pady=2)
         barra.grid(row=0, column=1, sticky="ns", padx=(0, 2), pady=2)
+        if scroll_x:
+            self._barra_x = ctk.CTkScrollbar(self, orientation="horizontal",
+                                             command=self.arbol.xview)
+            self.arbol.configure(xscrollcommand=self._mover_x)
+            self._barra_x.grid(row=1, column=0, sticky="ew", padx=2, pady=(0, 2))
+            self._barra_x.grid_remove()          # aparece solo si hace falta
         # colores de estado para las filas
         self.arbol.tag_configure("aviso", background=e.COLOR_AVISO_FONDO,
                                  foreground=e.COLOR_AVISO)
         self.arbol.tag_configure("peligro", background=e.COLOR_PELIGRO_FONDO,
                                  foreground=e.COLOR_PELIGRO)
+
+    def _mover_x(self, inicio, fin):
+        """Muestra la barra horizontal solo cuando hay columnas fuera de vista."""
+        if float(inicio) <= 0 and float(fin) >= 1:
+            self._barra_x.grid_remove()
+        else:
+            self._barra_x.grid()
+            self._barra_x.set(inicio, fin)
 
     def vaciar(self):
         self.arbol.delete(*self.arbol.get_children())

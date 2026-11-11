@@ -28,3 +28,9 @@ dist/
 
 # Editor
 .vscode/
+
+# Archivos de construccion
+build/
+dist/
+instalador/
+*.spec

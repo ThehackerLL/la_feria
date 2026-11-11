@@ -15,19 +15,25 @@ TAM_PEQUENO = 12
 TAM_CIFRA = 24
 
 # ------------------------------------------------------------------ colores
-# Base: tela vaquera (denim) sobre fondo claro tipo tiza.
-COLOR_FONDO = "#F4F5F7"          # fondo de ventanas
+# Base: azul marino sobre un fondo celeste muy suave.
+COLOR_FONDO = "#E8F1FA"          # fondo de ventanas
 COLOR_TARJETA = "#FFFFFF"        # tarjetas, formularios, tablas
-COLOR_BORDE = "#D9DDE3"          # bordes finos
+COLOR_BORDE = "#CBD8E6"          # bordes finos
 COLOR_TEXTO = "#1B2430"
 COLOR_TEXTO_SUAVE = "#5B6675"
 
-COLOR_PRIMARIO = "#2B4C8C"       # denim 2v4c8c
-COLOR_PRIMARIO_HOVER = "#223D72"
-COLOR_PRIMARIO_SUAVE = "#E3EAF6"  # fila seleccionada, pestaña activa
+COLOR_PRIMARIO = "#0049A7"       # azul de botones y acentos
+COLOR_PRIMARIO_HOVER = "#003A87"
+COLOR_PRIMARIO_SUAVE = "#D6E6F7"  # fila seleccionada, pestaña activa
 
-COLOR_OK = "#1F7A4D"
-COLOR_OK_HOVER = "#18633E"
+# Barra de arriba (nombre, pestañas, usuario, fecha)
+COLOR_BARRA = "#01356B"          # azul marino
+COLOR_BARRA_HOVER = "#0A4A8F"
+COLOR_BARRA_TEXTO = "#FFFFFF"
+COLOR_BARRA_TEXTO_SUAVE = "#BFD3EC"   # pestañas sin elegir y fecha
+
+COLOR_OK = "#02802C"
+COLOR_OK_HOVER = "#026A25"
 COLOR_OK_FONDO = "#E1F3EA"
 
 COLOR_AVISO = "#B45309"          # stock bajo
@@ -37,14 +43,16 @@ COLOR_PELIGRO = "#B42318"        # agotado, errores, anular
 COLOR_PELIGRO_HOVER = "#912018"
 COLOR_PELIGRO_FONDO = "#FDE8E6"
 
-COLOR_NEUTRO = "#E6E9EE"         # botón secundario
-COLOR_NEUTRO_HOVER = "#D5DAE1"
-COLOR_PESTANA = "#E6E9EE"
-COLOR_PESTANA_HOVER = "#D5DAE1"
+COLOR_NEUTRO = "#D9E2EB"         # botón secundario
+COLOR_NEUTRO_HOVER = "#C5D2E0"
+
+COLOR_ENCABEZADO = "#DADFE6"        # encabezados de las tablas (gris azulado)
+COLOR_ENCABEZADO_HOVER = "#C9D0DA"
+COLOR_ENCABEZADO_TEXTO = "#1B2430"
 
 # ------------------------------------------------------------------ medidas
 RADIO = 8            # esquinas de botones, campos y tarjetas
-ALTO_CONTROL = 36    # alto de botones y campos
+ALTO_CONTROL = 36        # alto de botones y campos
 ALTO_FILA = 30       # alto de fila en tablas
 ESPACIO = 12         # separación estándar
 MARGEN = 16          # margen de pantallas
@@ -103,12 +111,14 @@ def configurar_tabla():
                      font=(FUENTE, 11), background=COLOR_TARJETA,
                      fieldbackground=COLOR_TARJETA, foreground=COLOR_TEXTO,
                      borderwidth=0, relief="flat")
+    # Encabezados planos y en negrita (como siempre); solo cambia el color.
     estilo.configure("Feria.Treeview.Heading", font=(FUENTE, 11, "bold"),
-                     background=COLOR_NEUTRO, foreground=COLOR_TEXTO,
-                     relief="flat", padding=(8, 6))
+                     background=COLOR_ENCABEZADO,
+                     foreground=COLOR_ENCABEZADO_TEXTO,
+                     relief="flat", padding=(4, 2))
     estilo.map("Feria.Treeview",
                background=[("selected", COLOR_PRIMARIO_SUAVE)],
                foreground=[("selected", COLOR_TEXTO)])
     estilo.map("Feria.Treeview.Heading",
-               background=[("active", COLOR_NEUTRO_HOVER)])
+               background=[("active", COLOR_ENCABEZADO_HOVER)])
     estilo.layout("Feria.Treeview", [("Treeview.treearea", {"sticky": "nswe"})])
