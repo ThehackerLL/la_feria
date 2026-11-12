@@ -3,8 +3,9 @@ ni cambiar.
 
 Cada producto de cada venta (y de cada cambio de producto) queda anotado aquí
 con lo que valía en ese momento: cliente, código, nombre, costo, precio,
-descuento, vendedor y forma de pago. Aunque después se cambie el nombre o el
-costo del producto, la huella conserva lo de ese día.
+descuento, vendedor, forma de pago y tipo de venta (unidad o por mayor).
+Aunque después se cambie el nombre o el costo del producto, la huella conserva
+lo de ese día.
 
 Cómo se protege:
 - La base de datos rechaza cualquier UPDATE o DELETE sobre esta tabla.
@@ -41,7 +42,8 @@ CREATE TABLE IF NOT EXISTS huella (
     vendedor    TEXT    NOT NULL,
     forma_pago  TEXT    NOT NULL,
     anterior    TEXT    NOT NULL,
-    sello       TEXT    NOT NULL
+    sello       TEXT    NOT NULL,
+    tipo        TEXT    NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_huella_fecha ON huella(fecha);
 CREATE INDEX IF NOT EXISTS idx_huella_venta ON huella(venta_id);
@@ -64,6 +66,10 @@ def _sello(anterior, fila):
     for campo in _CAMPOS:
         valor = fila[campo]
         partes.append(f"{valor:.2f}" if isinstance(valor, float) else str(valor))
+    # El tipo de venta entra al sello solo si existe: las líneas anteriores a
+    # esta columna conservan su sello original.
+    if fila["tipo"]:
+        partes.append(str(fila["tipo"]))
     return hashlib.sha256("|".join(partes).encode("utf-8")).hexdigest()
 
 
@@ -75,6 +81,9 @@ def _ultimo_sello(c):
 def preparar(con, rellenar=False):
     """Crea la tabla. Con rellenar=True copia las ventas que ya existían."""
     con.executescript(_TABLA)
+    columnas = {f["name"] for f in con.execute("PRAGMA table_info(huella)")}
+    if "tipo" not in columnas:           # bases creadas antes de esta columna
+        con.execute("ALTER TABLE huella ADD COLUMN tipo TEXT NOT NULL DEFAULT ''")
     if rellenar and con.execute("SELECT 1 FROM huella LIMIT 1").fetchone() is None:
         _rellenar(con)
     return con
@@ -107,7 +116,8 @@ def registrar(c, venta_id, fecha, cliente, vendedor, forma_pago, lineas,
               descuento=0):
     """Anota las líneas de una venta (dentro de la misma transacción).
 
-    lineas: {"producto_id", "codigo", "nombre", "cantidad", "costo", "precio"}
+    lineas: {"producto_id", "codigo", "nombre", "cantidad", "costo", "precio",
+             "tipo"}  (tipo: "unidad" o "mayor")
     """
     anterior = _ultimo_sello(c)
     for l, desc in zip(lineas, repartir_descuento(lineas, descuento)):
@@ -116,13 +126,15 @@ def registrar(c, venta_id, fecha, cliente, vendedor, forma_pago, lineas,
                 "codigo": l["codigo"], "producto": l["nombre"],
                 "cantidad": int(l["cantidad"]), "costo": float(l["costo"]),
                 "precio": float(l["precio"]), "descuento": float(desc),
-                "vendedor": vendedor or "", "forma_pago": forma_pago}
+                "vendedor": vendedor or "", "forma_pago": forma_pago,
+                "tipo": l.get("tipo", "")}
         sello = _sello(anterior, fila)
         c.execute(
             "INSERT INTO huella (fecha, venta_id, producto_id, cliente, codigo, "
             "producto, cantidad, costo, precio, descuento, vendedor, forma_pago, "
-            "anterior, sello) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            tuple(fila[k] for k in _CAMPOS) + (anterior, sello))
+            "anterior, sello, tipo) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            tuple(fila[k] for k in _CAMPOS) + (anterior, sello, fila["tipo"]))
         anterior = sello
 
 
@@ -137,7 +149,8 @@ def _rellenar(c):
     for v in ventas:
         lineas = [dict(f) for f in c.execute(
             "SELECT d.producto_id, p.codigo, p.nombre, d.cantidad, "
-            "d.costo_unitario AS costo, d.precio_unitario AS precio "
+            "d.costo_unitario AS costo, d.precio_unitario AS precio, "
+            "d.tipo AS tipo "
             "FROM venta_detalle d JOIN productos p ON p.id = d.producto_id "
             "WHERE d.venta_id = ? ORDER BY d.id", (v["id"],))]
         if not lineas:
@@ -172,6 +185,17 @@ def _estado(anulada, devuelto, cambiado):
     return " + ".join(partes) if partes else "-"
 
 
+def _tipo_legible(c, fila):
+    """'Unidad', 'Por mayor' o '-' (líneas viejas cuyo tipo ya no se puede saber)."""
+    tipo = fila["tipo"]
+    if not tipo:       # línea anterior a la columna: se busca en la venta original
+        d = c.execute("SELECT tipo FROM venta_detalle WHERE venta_id = ? "
+                      "AND producto_id = ? ORDER BY id LIMIT 1",
+                      (fila["venta_id"], fila["producto_id"])).fetchone()
+        tipo = d["tipo"] if d else ""
+    return {"unidad": "Unidad", "mayor": "Por mayor"}.get(tipo, "-")
+
+
 def listar(periodo="hoy", hoy=None, limite=LIMITE, con=None):
     """Líneas de la huella, la más nueva primero. periodo: ver PERIODOS."""
     if periodo not in PERIODOS:
@@ -199,8 +223,9 @@ def listar(periodo="hoy", hoy=None, limite=LIMITE, con=None):
         preparar(c)
         anulaciones.preparar(c)
         filas = []
-        for f in c.execute(sql, args):
+        for f in c.execute(sql, args).fetchall():
             d = dict(f)
+            d["tipo_venta"] = _tipo_legible(c, d)
             d["estado"] = _estado(d["anulada"], d["devuelto"], d["cambiado"])
             d["anulado"] = "No" if d["estado"] == "-" else "Sí"
             d["ganancia"] = round(

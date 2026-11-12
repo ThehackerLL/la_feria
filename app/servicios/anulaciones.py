@@ -430,7 +430,8 @@ def cambiar_producto(venta_id, detalle_id, cantidad, nuevo_id, cantidad_nueva,
             forma_pago if r["diferencia"] else "Cambio",
             [{"producto_id": nuevo["id"], "codigo": nuevo["codigo"],
               "nombre": nuevo["nombre"], "cantidad": r["cantidad_nueva"],
-              "costo": nuevo["costo"], "precio": r["precio"]}])
+              "costo": nuevo["costo"], "precio": r["precio"],
+              "tipo": tipo}])
         actualizado = c.execute(
             "UPDATE productos SET stock = stock - ? WHERE id = ? AND stock >= ?",
             (r["cantidad_nueva"], nuevo["id"], r["cantidad_nueva"])).rowcount

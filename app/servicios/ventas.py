@@ -238,7 +238,7 @@ def registrar_venta(items, pagos, cliente_id=None, descuento=0, credito=None):
               "codigo": productos[l["producto_id"]].codigo,
               "nombre": productos[l["producto_id"]].nombre,
               "cantidad": l["cantidad"], "costo": productos[l["producto_id"]].costo,
-              "precio": l["precio"]} for l in lineas],
+              "precio": l["precio"], "tipo": l["tipo"]} for l in lineas],
             totales["descuento"])
 
     return {"venta_id": venta_id, "numero": numero_venta(venta_id),
