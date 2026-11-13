@@ -482,10 +482,20 @@ class PantallaVentasHechas(ctk.CTkFrame):
         if v["descuento"]:
             sub += f"  (con descuento de {moneda(v['descuento'])})"
         self._sub.configure(text=sub)
-        self.t_lineas.cargar([
+        filas = [
             (l["id"], (f"{l['nombre']}", f"{l['cantidad']:g}",
                        moneda(l["precio_unitario"]), moneda(l["subtotal"])), "")
-            for l in v["lineas"]])
+            for l in v["lineas"]]
+        # Lo devuelto o cambiado NO desaparece de la venta: sigue en la lista,
+        # en rojo (Anulada) o amarillo (Cambio).
+        for i, x in enumerate(v["devoluciones"]):
+            cambio = bool(x["nombre_nuevo"])
+            precio = x["valor"] / x["cantidad"] if x["cantidad"] else 0
+            filas.append((f"dev-{i}",
+                          (f"{x['nombre']}  ({'Cambio' if cambio else 'Anulada'})",
+                           f"{x['cantidad']:g}", moneda(precio), moneda(x["valor"])),
+                          "aviso" if cambio else "peligro"))
+        self.t_lineas.cargar(filas)
         if v["pagos"]:
             lineas = [f"{fecha_corta(p['fecha'])}  {p['forma_pago']}: "
                       f"{moneda(p['monto'])}" for p in v["pagos"]]
@@ -519,6 +529,10 @@ class PantallaVentasHechas(ctk.CTkFrame):
             if activa else "")
 
     def _elegir_linea(self, _id):
+        if str(_id).startswith("dev-"):       # fila ya devuelta o cambiada
+            self.b_devolver.configure(state="disabled")
+            self.b_cambiar.configure(state="disabled")
+            return
         if self._venta and self._venta["estado"] == "activa":
             self.b_devolver.configure(state="normal")
             self.b_cambiar.configure(state="normal")

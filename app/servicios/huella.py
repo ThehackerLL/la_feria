@@ -11,9 +11,13 @@ Cómo se protege:
 - La base de datos rechaza cualquier UPDATE o DELETE sobre esta tabla.
 - Cada línea lleva un «sello» que depende de la anterior. Si alguien edita la
   base por fuera, el sello ya no coincide y `verificar()` lo detecta.
-- «Venta hecha» no se guarda: se calcula con las anulaciones, devoluciones y
-  cambios, que también se conservan. Una venta anulada sigue apareciendo, con
-  «Anulada»; si nada ocurrió, muestra «-».
+- «Estado» no se guarda: se calcula con las anulaciones, devoluciones y
+  cambios, que también se conservan. Una venta anulada o devuelta sigue
+  apareciendo, con «Anulada» (rojo); un producto cambiado, con «Cambio»
+  (amarillo); si nada ocurrió, muestra «-».
+- Un cambio de producto NO añade una fila a la lista: la fila original solo
+  cambia de estado. (El producto nuevo sí queda anotado en la huella, con forma
+  de pago de la diferencia, o «Cambio»), pero la lista no lo muestra.)
 
 La tabla se crea sola (CREATE TABLE IF NOT EXISTS). Al crearla se copian las
 ventas que ya existían (con vendedor vacío).
@@ -173,16 +177,24 @@ def _desde(periodo, hoy):
     return None
 
 
-def _estado(anulada, devuelto, cambiado):
-    """Qué pasó con la venta: 'Anulada', 'Devuelto (2)', 'Cambiado (1)' o '-'."""
-    if anulada:
-        return "Anulada"
-    partes = []
-    if devuelto:
-        partes.append(f"Devuelto ({devuelto})")
-    if cambiado:
-        partes.append(f"Cambiado ({cambiado})")
-    return " + ".join(partes) if partes else "-"
+def _estado(anulada, devuelto, cambiado, cantidad):
+    """(texto, color) del estado de una línea.
+
+    Anulada (rojo): la venta se anuló o se devolvió el producto.
+    Cambio (amarillo): el producto se cambió por otro.
+    '-' sin color: no pasó nada.
+    """
+    partes, color = [], ""
+    if anulada or (devuelto and devuelto >= cantidad):
+        partes.append("Anulada")
+        color = "peligro"
+    elif devuelto:
+        partes.append(f"Anulada ({devuelto})")
+        color = "peligro"
+    if not anulada and cambiado:
+        partes.append("Cambio" if cambiado >= cantidad else f"Cambio ({cambiado})")
+        color = color or "aviso"
+    return (" + ".join(partes), color) if partes else ("-", "")
 
 
 def _tipo_legible(c, fila):
@@ -214,8 +226,13 @@ def listar(periodo="hoy", hoy=None, limite=LIMITE, con=None):
            " AND d.fecha >= h.fecha AND d.producto_nuevo_id IS NOT NULL) AS cambiado "
            "FROM huella h ")
     args = []
+    # El producto nuevo de un cambio no se lista como fila: queda anotado en la
+    # huella, pero la fila original solo cambia de estado.
+    sql += ("WHERE NOT EXISTS(SELECT 1 FROM devoluciones d "
+            "WHERE d.venta_id = h.venta_id AND d.producto_nuevo_id = h.producto_id "
+            "AND d.fecha = h.fecha) ")
     if desde:
-        sql += "WHERE substr(h.fecha, 1, 10) >= ? "
+        sql += "AND substr(h.fecha, 1, 10) >= ? "
         args.append(desde)
     sql += "ORDER BY h.id DESC LIMIT ?"
     args.append(limite)
@@ -226,7 +243,8 @@ def listar(periodo="hoy", hoy=None, limite=LIMITE, con=None):
         for f in c.execute(sql, args).fetchall():
             d = dict(f)
             d["tipo_venta"] = _tipo_legible(c, d)
-            d["estado"] = _estado(d["anulada"], d["devuelto"], d["cambiado"])
+            d["estado"], d["color"] = _estado(d["anulada"], d["devuelto"],
+                                              d["cambiado"], d["cantidad"])
             d["anulado"] = "No" if d["estado"] == "-" else "Sí"
             d["ganancia"] = round(
                 d["cantidad"] * (d["precio"] - d["costo"]) - d["descuento"], 2)

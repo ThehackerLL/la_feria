@@ -1,7 +1,7 @@
 """Pestaña «Huella digital»: cada producto vendido, sin poder borrar ni cambiar nada.
 
 Una fila por producto vendido, con lo que valía ese día. Si una venta se anula
-o se devuelve o cambia un producto, la fila sigue aquí y solo cambia «Venta hecha».
+o se devuelve o cambia un producto, la fila sigue aquí y solo cambia «Estado» (rojo: anulada; amarillo: cambio).
 Si alguien edita la base de datos por fuera, aparece un aviso rojo.
 """
 import customtkinter as ctk
@@ -12,9 +12,8 @@ from app.servicios import huella
 from app.utilidades.formato import entero, moneda
 
 _COLUMNAS = [
-    # Suman unos 1250 px: caben en la ventana normal (y «Producto» se estira).
-    # En pantallas chicas, o con escala de Windows alta, aparece la barra de
-    # desplazamiento horizontal.
+    # En pantallas chicas (o con escala de Windows alta) aparece la barra de
+    # desplazamiento horizontal. «Producto» se estira.
     ("fecha", "Fecha y hora", 130, "w"),
     ("vendedor", "Vendedor", 150, "w"),
     ("cliente", "Cliente", 250, "w"),
@@ -23,11 +22,11 @@ _COLUMNAS = [
     ("tipo", "Tipo de venta", 115, "w"),
     ("cantidad", "Cantidad", 90, "center"),
     ("costo", "Costo", 72, "e"),
-    ("precio", "Precio de venta", 150, "e"),
     ("descuento", "Descuento", 96, "e"),
+    ("precio", "Precio de venta", 150, "e"),
     ("ganancia", "Ganancia", 90, "e"),
     ("forma", "Forma de pago", 150, "w"),
-    ("estado", "Venta hecha", 150, "w"),
+    ("estado", "Estado", 150, "w"),
 ]
 
 
@@ -74,11 +73,11 @@ class PantallaHuella(ctk.CTkFrame):
         self.tabla.cargar([
             (f["id"], (_fecha_hora(f["fecha"]), f["vendedor"] or "-", f["cliente"],
                        f["codigo"], f["producto"], f["tipo_venta"],
-                       entero(f["cantidad"]),
-                       moneda(f["costo"]), moneda(f["precio"]),
+                       entero(f["cantidad"]), moneda(f["costo"]),
                        moneda(f["descuento"]) if f["descuento"] else "-",
-                       moneda(f["ganancia"]), f["forma_pago"], f["estado"]),
-             "aviso" if f["estado"] != "-" else "")
+                       moneda(f["precio"]), moneda(f["ganancia"]),
+                       f["forma_pago"], f["estado"]),
+             f["color"])
             for f in filas])
         texto = f"{len(filas)} {'producto' if len(filas) == 1 else 'productos'}"
         if len(filas) >= huella.LIMITE:
